@@ -14,7 +14,8 @@ var S = {
   CHANGELOG:'変更履歴',
   SSLINKS:  'SS連携設定',
   PRICE_H:  '価格履歴',
-  META:     'メタ'
+  META:     'メタ',
+  SUPPLIERS:'サプライヤマスタ'
 };
 
 // ── プロパティ ──
@@ -94,14 +95,15 @@ function _write(name, headers, rows) {
 
 // ── ヘッダー定義 ──
 var H = {
-  PARTS:    ['部品コード','部品名','メーカー名','公表単価','仕入先','廃番フラグ','RoHS対応','認定部品','備考','更新日時'],
+  PARTS:    ['部品コード','部品名','メーカー名','公表単価','仕入先','メイン商社','生産拠点','廃番フラグ','RoHS対応','認定部品','備考','更新日時'],
   BOM:      ['基板ID','部品コード','使用数量','単位','レベル','親ID','種別','備考'],
   MACHINES: ['機種コード','機種名','種類','ブランド','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','備考','更新日時'],
   BOARDS:   ['基板ID','基板名','基板分類','バージョン','ステータス','作成日','備考','更新日時'],
   STOCK:    ['部品コード','在庫数','安全在庫','備考','更新日時'],
   CHANGELOG:['日時','担当者','ECN番号','対象','変更種別','変更前','変更後','備考'],
   SSLINKS:  ['名前','SSID','シート名','種別','備考'],
-  PRICE_H:  ['日時','部品コード','旧単価','新単価','変化率']
+  PRICE_H:  ['日時','部品コード','旧単価','新単価','変化率'],
+  SUPPLIERS:['企業コード','企業名','区分','主要生産拠点','担当者','連絡先','備考','更新日時']
 };
 
 // ══════════════════════════════════════════════════
@@ -109,7 +111,11 @@ var H = {
 // ══════════════════════════════════════════════════
 function apiLoadAll() {
   return _wrap(function() {
-    var parts = {}, bom = {}, machines = {}, boards = {}, stock = {};
+    var parts = {}, bom = {}, machines = {}, boards = {}, stock = {}, suppliers = {};
+
+    _read(S.SUPPLIERS, H.SUPPLIERS).forEach(function(r) {
+      if (r['企業コード']) suppliers[r['企業コード']] = { code:String(r['企業コード']), name:String(r['企業名']||''), type:String(r['区分']||'商社'), base:String(r['主要生産拠点']||''), pic:String(r['担当者']||''), contact:String(r['連絡先']||''), note:String(r['備考']||''), updatedAt:String(r['更新日時']||'') };
+    });
 
     _read(S.PARTS, H.PARTS).forEach(function(r) {
       if (r['部品コード']) parts[r['部品コード']] = {
@@ -118,6 +124,8 @@ function apiLoadAll() {
         maker: String(r['メーカー名'] || ''),
         price: String(r['公表単価'] || ''),
         supplier: String(r['仕入先'] || ''),
+        mainSupplier: String(r['メイン商社'] || ''),
+        base: String(r['生産拠点'] || ''),
         eol: String(r['廃番フラグ'] || '0'),
         rohs: String(r['RoHS対応'] || '0'),
         certified: String(r['認定部品'] || '0'),
@@ -185,7 +193,7 @@ function apiLoadAll() {
       return { name:String(r['名前']||''), ssId:String(r['SSID']||''), sheet:String(r['シート名']||''), type:String(r['種別']||'inventory'), note:String(r['備考']||'') };
     });
 
-    return { parts:parts, bom:bom, machines:machines, boards:boards, stock:stock, changelog:changelog, sslinks:sslinks, priceHistory:[] };
+    return { parts:parts, bom:bom, machines:machines, boards:boards, stock:stock, changelog:changelog, sslinks:sslinks, priceHistory:[], suppliers:suppliers };
   });
 }
 
@@ -193,9 +201,20 @@ function apiLoadAll() {
 function apiSaveParts(partsObj) {
   return _wrap(function() {
     var rows = Object.values(partsObj).map(function(p) {
-      return { '部品コード':p.code, '部品名':p.name||'', 'メーカー名':p.maker||'', '公表単価':p.price||'', '仕入先':p.supplier||'', '廃番フラグ':p.eol||'0', 'RoHS対応':p.rohs||'0', '認定部品':p.certified||'0', '備考':p.note||'', '更新日時':p.updatedAt||'' };
+      return { '部品コード':p.code, '部品名':p.name||'', 'メーカー名':p.maker||'', '公表単価':p.price||'', '仕入先':p.supplier||'', 'メイン商社':p.mainSupplier||'', '生産拠点':p.base||'', '廃番フラグ':p.eol||'0', 'RoHS対応':p.rohs||'0', '認定部品':p.certified||'0', '備考':p.note||'', '更新日時':p.updatedAt||'' };
     });
     _write(S.PARTS, H.PARTS, rows);
+    return { saved: rows.length };
+  });
+}
+
+// ── サプライヤマスタ保存 ──
+function apiSaveSuppliers(supObj) {
+  return _wrap(function() {
+    var rows = Object.values(supObj).map(function(s) {
+      return { '企業コード':s.code, '企業名':s.name||'', '区分':s.type||'商社', '主要生産拠点':s.base||'', '担当者':s.pic||'', '連絡先':s.contact||'', '備考':s.note||'', '更新日時':s.updatedAt||'' };
+    });
+    _write(S.SUPPLIERS, H.SUPPLIERS, rows);
     return { saved: rows.length };
   });
 }

@@ -315,7 +315,9 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
     <div class="nav" data-page="parts" onclick="goto(this)"><span class="nav-ic">🔩</span><span>部品マスタ</span></div>
     <div class="nav" data-page="machines" onclick="goto(this)"><span class="nav-ic">🎰</span><span>機種マスタ</span></div>
     <div class="nav" data-page="boards" onclick="goto(this)"><span class="nav-ic">📟</span><span>基板マスタ</span></div>
+    <div class="nav" data-page="suppliers" onclick="goto(this)"><span class="nav-ic">🏢</span><span>サプライヤマスタ</span></div>
     <div class="sb-label">購買・原価</div>
+    <div class="nav" data-page="bcp" onclick="goto(this)"><span class="nav-ic">🌍</span><span>調達・BCP管理</span></div>
     <div class="nav" data-page="cost" onclick="goto(this)"><span class="nav-ic">💴</span><span>原価シミュレーター</span></div>
     <div class="nav" data-page="stock" onclick="goto(this)"><span class="nav-ic">📦</span><span>在庫管理</span></div>
     <div class="nav" data-page="whereused" onclick="goto(this)"><span class="nav-ic">🔍</span><span>Where-Used 検索</span></div>
@@ -386,8 +388,49 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
         </div>
       </div>
       <div class="tbl-wrap"><table><thead><tr>
-        <th>部品コード</th><th>部品名</th><th>メーカー</th><th>公表単価</th><th>在庫数</th><th>廃番</th><th>RoHS</th><th>操作</th>
+        <th>部品コード</th><th>部品名</th><th>メーカー</th><th>生産拠点</th><th>公表単価</th><th>在庫数</th><th>廃番</th><th>RoHS</th><th>操作</th>
       </tr></thead><tbody id="parts-tbody"></tbody></table></div>
+    </div>
+
+    <!-- ═══ SUPPLIERS ═══ -->
+    <div id="page-suppliers" class="page">
+      <div class="sec-header">
+        <div class="sec-title">サプライヤマスタ</div>
+        <div style="display:flex;gap:8px;">
+          <div class="search-bar"><span class="search-icon">🔍</span><input type="text" placeholder="企業名・拠点..." id="sup-search" oninput="renderSuppliers(this.value)"></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('sup-modal');editSupplier(null)">＋ サプライヤ追加</button>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>企業コード</th><th>企業名</th><th>区分</th><th>主要生産拠点</th><th>担当者</th><th>連絡先</th><th>操作</th>
+      </tr></thead><tbody id="sup-tbody"></tbody></table></div>
+    </div>
+
+    <!-- ═══ BCP & PROCUREMENT ═══ -->
+    <div id="page-bcp" class="page">
+      <div class="sec-header"><div class="sec-title">調達・BCPダッシュボード</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card">
+          <div class="card-header"><span class="card-title">🌍 災害・BCP 影響検索</span></div>
+          <div class="card-body">
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <input type="text" id="bcp-query" class="fi" placeholder="地域・国名・工場名を入力 (例:台湾)" style="flex:1;">
+              <button class="btn btn-primary" onclick="searchBCP()">影響検索</button>
+            </div>
+            <div class="tbl-wrap" style="max-height:300px;"><table style="font-size:11px;"><thead><tr><th>部品コード</th><th>拠点</th><th>基板 (影響)</th></tr></thead><tbody id="bcp-tbody"></tbody></table></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">💴 価格交渉・調達リスト出力</span></div>
+          <div class="card-body">
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <select id="nego-sup" class="fs" style="flex:1;"><option value="">商社・メーカを選択</option></select>
+              <button class="btn btn-primary" onclick="exportNegoCSV()">交渉用CSV出力</button>
+            </div>
+            <div class="empty" style="padding:15px;"><div class="empty-desc">商社ごとの部品単価、採用基板数を集計して出力します。</div></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ MACHINES ═══ -->
@@ -605,6 +648,10 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
         <div class="fg"><label class="fl">公表単価（円）</label><input class="fi" id="pm-price" type="number" min="0"></div>
       </div>
       <div class="frow">
+        <div class="fg"><label class="fl">メイン商社</label><input class="fi" id="pm-main-supplier" placeholder="例: 〇〇エレクトロニクス"></div>
+        <div class="fg"><label class="fl">生産拠点 (国/地域)</label><input class="fi" id="pm-base" placeholder="例: 台湾, 熊本"></div>
+      </div>
+      <div class="frow">
         <div class="fg"><label class="fl">仕入先</label><input class="fi" id="pm-supplier"></div>
         <div class="fg"><label class="fl">廃番フラグ</label><select class="fs" id="pm-eol"><option value="0">現役</option><option value="1">廃番</option></select></div>
       </div>
@@ -614,6 +661,41 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
       </div>
       <div class="fg"><label class="fl">備考</label><textarea class="fta" id="pm-note" rows="2"></textarea></div>
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px;" onclick="savePart()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- サプライヤ編集 -->
+<div class="overlay" id="sup-modal">
+  <div class="modal modal-sm">
+    <div class="modal-head"><h3 id="sup-modal-title">サプライヤを追加</h3><button class="modal-close" onclick="closeModal('sup-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="sup-code-orig">
+      <div class="fg"><label class="fl">企業コード <span class="req">*</span></label><input class="fi" id="sup-code"></div>
+      <div class="fg"><label class="fl">企業名</label><input class="fi" id="sup-name"></div>
+      <div class="frow">
+        <div class="fg"><label class="fl">区分</label><select class="fs" id="sup-type"><option value="商社">商社（代理店）</option><option value="メーカー">メーカー</option><option value="その他">その他</option></select></div>
+        <div class="fg"><label class="fl">主要生産拠点</label><input class="fi" id="sup-base" placeholder="国/地域/支店"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label class="fl">担当者</label><input class="fi" id="sup-pic"></div>
+        <div class="fg"><label class="fl">連絡先</label><input class="fi" id="sup-contact"></div>
+      </div>
+      <div class="fg"><label class="fl">備考</label><textarea class="fta" id="sup-note" rows="2"></textarea></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px;" onclick="saveSupplier()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- QRコード表示 -->
+<div class="overlay" id="qr-modal">
+  <div class="modal modal-sm">
+    <div class="modal-head"><h3 id="qr-modal-title">QRコード発行 (棚卸し用)</h3><button class="modal-close" onclick="closeModal('qr-modal')">✕</button></div>
+    <div class="modal-body" style="text-align:center;">
+      <div id="qr-container" style="background:#fff;padding:20px;border-radius:12px;display:inline-block;margin-bottom:15px;box-shadow:0 2px 10px rgba(0,0,0,0.1);"></div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:4px;" id="qr-code-text"></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:20px;" id="qr-name-text"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px;" onclick="window.print()">印刷する</button>
     </div>
   </div>
 </div>
@@ -749,7 +831,7 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
 // ════════════════════════════════════════════════
 
 // インメモリキャッシュ（GASからロードしたデータを保持）
-let DB = { parts:{}, bom:{}, machines:{}, boards:{}, stock:{}, changelog:[], sslinks:[], priceHistory:[] };
+let DB = { parts:{}, bom:{}, machines:{}, boards:{}, stock:{}, suppliers:{}, changelog:[], sslinks:[], priceHistory:[] };
 let _dbLoaded = false;
 let _pendingSaves = {}; // { parts, bom, machines, boards, stock, sslinks }
 
@@ -769,6 +851,7 @@ function loadDB(callback) {
         machines:  res.machines  || {},
         boards:    res.boards    || {},
         stock:     res.stock     || {},
+        suppliers: res.suppliers || {},
         changelog: res.changelog || [],
         sslinks:   res.sslinks   || [],
         priceHistory: []
@@ -824,6 +907,12 @@ function saveDB(db, tableHint) {
       .withSuccessHandler(function(r){ if(!r||!r.success) toast('SS連携設定保存エラー: '+(r&&r.error||''),'error'); })
       .withFailureHandler(function(e){ toast('SS連携設定保存失敗: '+e.message,'error'); })
       .apiSaveSSLinks(db.sslinks);
+  }
+  if (!tableHint || tableHint === 'suppliers') {
+    google.script.run
+      .withSuccessHandler(function(r){ if(!r||!r.success) toast('サプライヤ保存エラー: '+(r&&r.error||''),'error'); })
+      .withFailureHandler(function(e){ toast('サプライヤ保存失敗: '+e.message,'error'); })
+      .apiSaveSuppliers(db.suppliers);
   }
 }
 
@@ -893,7 +982,7 @@ const PAGE_TITLES = {
   dashboard:'ダッシュボード', tree:'BOMツリー', parts:'部品マスタ',
   machines:'機種マスタ', boards:'基板マスタ', cost:'原価シミュレーター',
   stock:'在庫管理', whereused:'Where-Used 検索', changelog:'変更履歴 / ECN管理',
-  compare:'BOM比較', import:'CSVインポート', sslink:'SS連携', settings:'設定'
+  compare:'BOM比較', import:'CSVインポート', sslink:'SS連携', settings:'設定', suppliers:'サプライヤマスタ', bcp:'調達・BCP管理'
 };
 
 function goto(el) {
@@ -912,6 +1001,8 @@ function onPageEnter(page) {
   if (page === 'parts')      renderParts();
   if (page === 'machines')   renderMachines();
   if (page === 'boards')     renderBoards();
+  if (page === 'suppliers')  renderSuppliers();
+  if (page === 'bcp')        renderSuppliers();
   if (page === 'stock')      renderStock();
   if (page === 'changelog')  renderChangelog();
   if (page === 'cost')       populateCostBoards();
@@ -1134,11 +1225,13 @@ function renderParts(filter) {
         <td><span class="mono">${esc(p.code)}</span>${p.certified=='1'?' <span title="認定部品(変更不可)">🔒</span>':''}</td>
         <td>${esc(p.name||'')}</td>
         <td>${esc(p.maker||'')}</td>
+        <td>${esc(p.base||'—')}</td>
         <td style="text-align:right;font-family:var(--mono);">¥${fmtNum(p.price||0)}</td>
         <td style="text-align:center;">${(() => {const s=DB.stock[p.code];if(!s)return'<span style="color:var(--text3);">—</span>';const q=parseFloat(s.qty||0);return `<span class="${q===0?'stock-zero':q<=parseFloat(s.safe||0)&&parseFloat(s.safe||0)>0?'stock-low':'stock-ok'}">${q}</span>`;})()}</td>
         <td>${p.eol=='1'?'<span class="pill pill-red">廃番</span>':'<span class="pill pill-green">現役</span>'}</td>
         <td style="text-align:center;">${p.rohs=='1'?'<span class="pill pill-green" style="font-size:9px;">RoHS</span>':'<span class="pill pill-gray" style="font-size:9px;">未</span>'}</td>
         <td style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="showQR('${esc(p.code)}', '${esc(p.name||'')}')">📱 QR</button>
           <button class="btn btn-ghost btn-sm" onclick="editPart('${esc(p.code)}');openModal('part-modal')">編集</button>
           <button class="btn btn-danger btn-sm" onclick="deletePart('${esc(p.code)}')">削除</button>
         </td>
@@ -1155,6 +1248,8 @@ function editPart(code) {
   document.getElementById('pm-maker').value   = p.maker   || '';
   document.getElementById('pm-price').value   = p.price   || '';
   document.getElementById('pm-supplier').value= p.supplier|| '';
+  document.getElementById('pm-main-supplier').value= p.mainSupplier|| '';
+  document.getElementById('pm-base').value    = p.base    || '';
   document.getElementById('pm-eol').value     = p.eol     || '0';
   document.getElementById('pm-rohs').value    = p.rohs    || '0';
   document.getElementById('pm-certified').value = p.certified || '0';
@@ -1173,7 +1268,7 @@ function savePart() {
     DB.changelog.push({ date: now(), user: '—', ecn: '', target: code, type: '単価変更', before: oldPart.price, after: newPrice, note: '' });
   }
   if (origCode && origCode !== code) delete DB.parts[origCode];
-  DB.parts[code] = { code, name: document.getElementById('pm-name').value.trim(), maker: document.getElementById('pm-maker').value.trim(), price: newPrice, supplier: document.getElementById('pm-supplier').value.trim(), eol: document.getElementById('pm-eol').value, rohs: document.getElementById('pm-rohs').value, certified: document.getElementById('pm-certified').value, note: document.getElementById('pm-note').value.trim(), updatedAt: now() };
+  DB.parts[code] = { code, name: document.getElementById('pm-name').value.trim(), maker: document.getElementById('pm-maker').value.trim(), price: newPrice, supplier: document.getElementById('pm-supplier').value.trim(), mainSupplier: document.getElementById('pm-main-supplier').value.trim(), base: document.getElementById('pm-base').value.trim(), eol: document.getElementById('pm-eol').value, rohs: document.getElementById('pm-rohs').value, certified: document.getElementById('pm-certified').value, note: document.getElementById('pm-note').value.trim(), updatedAt: now() };
   saveDB(DB, 'parts');
   closeModal('part-modal');
   renderParts();
@@ -1826,6 +1921,114 @@ function askAI_original(name) {
 
 // ローカルキャッシュのみ更新（import後に使用）
 function loadDB_sync() { return DB; }
+
+// ════════════════════════════════════════════════
+// NEW: サプライヤマスタ・BCP・価格交渉・QR
+// ════════════════════════════════════════════════
+function showQR(code, name) {
+  const url = `https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=${encodeURIComponent(code)}`;
+  document.getElementById('qr-container').innerHTML = `<img src="${url}" alt="QR code" width="150" height="150">`;
+  document.getElementById('qr-code-text').textContent = code;
+  document.getElementById('qr-name-text').textContent = name || '';
+  openModal('qr-modal');
+}
+
+function renderSuppliers(filter) {
+  const q = (filter||document.getElementById('sup-search')?.value||'').toLowerCase();
+  const sups = Object.values(DB.suppliers).filter(s => !q || s.code.toLowerCase().includes(q) || (s.name||'').toLowerCase().includes(q) || (s.base||'').toLowerCase().includes(q));
+  document.getElementById('sup-tbody').innerHTML = sups.length ? sups.map(s => `<tr>
+    <td><span class="mono">${esc(s.code)}</span></td>
+    <td style="font-weight:600;">${esc(s.name||'')}</td>
+    <td><span class="pill pill-blue">${esc(s.type||'—')}</span></td>
+    <td>${esc(s.base||'—')}</td>
+    <td>${esc(s.pic||'—')}</td>
+    <td>${esc(s.contact||'—')}</td>
+    <td style="display:flex;gap:4px;">
+      <button class="btn btn-ghost btn-sm" onclick="editSupplier('${esc(s.code)}');openModal('sup-modal')">編集</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSupplier('${esc(s.code)}')">削除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="7"><div class="empty"><div class="empty-desc">サプライヤ情報がありません</div></div></td></tr>';
+
+  const negoSelect = document.getElementById('nego-sup');
+  if (negoSelect) negoSelect.innerHTML = '<option value="">商社・メーカを選択</option>' + Object.values(DB.suppliers).map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+}
+
+function editSupplier(code) {
+  const s = code ? (DB.suppliers[code] || {}) : {};
+  document.getElementById('sup-modal-title').innerText = code ? 'サプライヤを編集' : 'サプライヤを追加';
+  document.getElementById('sup-code-orig').value = code || '';
+  document.getElementById('sup-code').value = s.code || '';
+  document.getElementById('sup-name').value = s.name || '';
+  document.getElementById('sup-type').value = s.type || '商社';
+  document.getElementById('sup-base').value = s.base || '';
+  document.getElementById('sup-pic').value  = s.pic || '';
+  document.getElementById('sup-contact').value = s.contact || '';
+  document.getElementById('sup-note').value = s.note || '';
+}
+
+function saveSupplier() {
+  const code = document.getElementById('sup-code').value.trim();
+  if (!code) { toast('企業コードは必須です', 'error'); return; }
+  const origCode = document.getElementById('sup-code-orig').value;
+  if (origCode && origCode !== code) delete DB.suppliers[origCode];
+  DB.suppliers[code] = { code, name: document.getElementById('sup-name').value.trim(), type: document.getElementById('sup-type').value, base: document.getElementById('sup-base').value.trim(), pic: document.getElementById('sup-pic').value.trim(), contact: document.getElementById('sup-contact').value.trim(), note: document.getElementById('sup-note').value.trim(), updatedAt: now() };
+  saveDB(DB, 'suppliers');
+  closeModal('sup-modal');
+  renderSuppliers();
+  toast('保存しました');
+}
+
+function deleteSupplier(code) {
+  if (!confirm(`サプライヤ「${code}」を削除しますか？`)) return;
+  delete DB.suppliers[code];
+  saveDB(DB, 'suppliers');
+  renderSuppliers();
+  toast('削除しました');
+}
+
+function searchBCP() {
+  const q = document.getElementById('bcp-query').value.trim().toLowerCase();
+  if (!q) { toast('検索キーワードを入力してください','error'); return; }
+  let results = [];
+  const bps = Object.values(DB.parts).filter(p => {
+    return (p.base && p.base.toLowerCase().includes(q)) || (p.maker && p.maker.toLowerCase().includes(q)) || (p.name && p.name.toLowerCase().includes(q));
+  });
+  if (bps.length === 0) {
+    document.getElementById('bcp-tbody').innerHTML = '<tr><td colspan="3"><div class="empty"><div class="empty-desc">影響を受ける部品はありません</div></div></td></tr>';
+    return;
+  }
+  bps.forEach(p => {
+    const parentBoms = Object.values(DB.bom).filter(r => r.partCode === p.code);
+    let affectedBoards = [];
+    parentBoms.forEach(r => {
+      const b = DB.boards[r.boardId];
+      if (b && (b.status === '量産中' || b.status === '承認済' || b.status === '試作')) {
+        affectedBoards.push(`${b.id}(${b.status})`);
+      }
+    });
+    results.push(`<tr><td class="mono">${esc(p.code)}</td><td>${esc(p.base||p.maker||'')}</td><td>${affectedBoards.length ? affectedBoards.join(', ') : '<span style="color:var(--text3);">影響稼働基板なし</span>'}</td></tr>`);
+  });
+  document.getElementById('bcp-tbody').innerHTML = results.join('');
+  toast(`${bps.length}件の部品がヒットしました`);
+}
+
+function exportNegoCSV() {
+  const supName = document.getElementById('nego-sup').value;
+  if (!supName) { toast('商社を選択してください', 'error'); return; }
+  const parts = Object.values(DB.parts).filter(p => p.supplier === supName || p.mainSupplier === supName || p.maker === supName);
+  if (!parts.length) { toast('対象部品がありません', 'error'); return; }
+  let csv = '\uFEFF部品コード,部品名,仕入先/メイン商社,メーカ,現在単価,採用基板数,RoHS,廃番,備考\n';
+  parts.forEach(p => {
+    const boardCount = Object.values(DB.bom).filter(r => r.partCode === p.code).length;
+    csv += `"${p.code}","${p.name||''}","${p.mainSupplier||p.supplier||''}","${p.maker||''}","${p.price||0}","${boardCount}","${p.rohs=='1'?'対象':''}","${p.eol=='1'?'廃番':''}","${(p.note||'').replace(/\n/g,' ')}"\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `価格交渉リスト_${supName}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('CSVを出力しました', 'ok');
+}
 
 // ════════════════════════════════════════════════
 // INIT — GASからデータをロード
