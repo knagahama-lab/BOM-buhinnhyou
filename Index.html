@@ -1252,8 +1252,9 @@ function renderBoards() {
         const bomCount = Object.values(DB.bom).filter(r => r.boardId === b.id).length;
         return `<tr>
           <td><span class="mono" style="cursor:pointer;color:var(--accent);" onclick="openBoardDetail('${esc(b.id)}')">${esc(b.id)}</span></td>
-          <td style="font-weight:500;">${esc(b.name||'')}</td>
-          <td><span class="pill pill-blue">${esc(b.category||'—')}</span></td>
+            <td style="font-weight:500;">${esc(b.name||'')}</td>
+            <td><span class="pill ${b.status==='量産中'?'pill-green':b.status==='承認済'?'pill-blue':b.status==='終息'?'pill-red':'pill-gray'}">${esc(b.status||'設計中')}</span></td>
+            <td><span class="pill pill-blue">${esc(b.category||'—')}</span></td>
           <td>${esc(b.version||'')}</td>
           <td style="font-family:var(--mono);font-size:11px;">${esc(b.date||'')}</td>
           <td style="text-align:center;"><span class="pill pill-gray">${bomCount}</span></td>
