@@ -362,23 +362,7 @@ function _findColIdx(headers, candidates) {
   return -1;
 }
 
-// ── Gemini AI 部品調査 ──
-function apiAskAI(partName) {
-  return _wrap(function() {
-    var key = getSetting('GEMINI_API_KEY');
-    if (!key) throw new Error('GEMINI_API_KEY が未設定です（スクリプトプロパティに追加してください）');
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key;
-    var res = UrlFetchApp.fetch(url, {
-      method: 'post', contentType: 'application/json',
-      payload: JSON.stringify({ contents: [{ parts: [{ text:
-        'パチンコ・パチスロ基板用電子部品「' + partName + '」について以下を簡潔に回答してください：\n' +
-        '1. 主な仕様・スペック\n2. 基板上での用途・役割\n3. 代替品・互換品の候補\n4. 廃番・入手性の注意点\nプレーンテキストで300字程度で回答してください。'
-      }]}]})
-    });
-    var json = JSON.parse(res.getContentText());
-    return { answer: json.candidates[0].content.parts[0].text };
-  });
-}
+
 
 // ── エラーラッパー ──
 function _wrap(fn) {

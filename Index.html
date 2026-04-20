@@ -1199,6 +1199,7 @@ function renderParts(filter) {
         <td style="text-align:center;">${p.rohs=='1'?'<span class="pill pill-green" style="font-size:9px;">RoHS</span>':'<span class="pill pill-gray" style="font-size:9px;">未</span>'}</td>
         <td style="display:flex;gap:4px;">
           <button class="btn btn-ghost btn-sm" onclick="showQR('${esc(p.code)}', '${esc(p.name||'')}')">📱 QR</button>
+          <button class="btn btn-ghost btn-sm" onclick="searchWeb('${esc(p.name||p.code)}')">🔍 検索</button>
           <button class="btn btn-ghost btn-sm" onclick="editPart('${esc(p.code)}');openModal('part-modal')">編集</button>
           <button class="btn btn-danger btn-sm" onclick="deletePart('${esc(p.code)}')">削除</button>
         </td>
@@ -1875,16 +1876,21 @@ function syncFromSS() {
     .apiSyncInventoryFromSS();
 }
 
-// askAIをGAS API経由に差し替え
-function askAI_original(name) {
-  showInfo('AI部品調査 — '+name, '<div style="text-align:center;padding:20px;color:#a1a1aa;">Gemini AI に問い合わせ中...<br><div style="width:20px;height:20px;border:2px solid #e2e2e5;border-top-color:#2563eb;border-radius:50%;animation:spin .6s linear infinite;margin:10px auto;"></div></div>');
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) { document.getElementById('info-body').innerHTML = '<div style="color:#dc2626;">エラー: '+(res&&res.error||'不明')+'</div>'; return; }
-      document.getElementById('info-body').innerHTML = '<pre style="white-space:pre-wrap;font-size:12px;line-height:1.75;font-family:DM Sans,sans-serif;">'+esc(res.answer)+'</pre>';
-    })
-    .withFailureHandler(function(e) { document.getElementById('info-body').innerHTML = '<div style="color:#dc2626;">GASエラー: '+esc(e.message)+'</div>'; })
-    .apiAskAI(name);
+// ── Webで部品情報・代替品を検索 ──
+function searchWeb(name) {
+  if (!name) return;
+  const q = encodeURIComponent(name);
+  const html = `
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;font-size:13px;color:var(--text2);">以下のサイトで部品情報を無料検索できます：</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <a href="https://www.google.com/search?q=${q}+電子部品+データシート" target="_blank" class="btn btn-ghost" style="text-decoration:none;display:block;text-align:center;border:1px solid var(--border);">🔍 Google で検索</a>
+        <a href="https://www.digikey.jp/ja/products/result?keywords=${q}" target="_blank" class="btn btn-ghost" style="text-decoration:none;display:block;text-align:center;border:1px solid var(--border);">🔍 Digi-Key で検索</a>
+        <a href="https://www.mouser.jp/c/?q=${q}" target="_blank" class="btn btn-ghost" style="text-decoration:none;display:block;text-align:center;border:1px solid var(--border);">🔍 Mouser で検索</a>
+      </div>
+    </div>
+  `;
+  showInfo('部品調査 — ' + esc(name), html);
 }
 
 // ローカルキャッシュのみ更新（import後に使用）
