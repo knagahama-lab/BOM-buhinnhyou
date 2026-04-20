@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BOM Pro — パチンコ基板部品表管理</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 /* ═══════════════════════════════════════════════
    DESIGN SYSTEM — Industrial Precision
@@ -379,6 +380,7 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
         <div class="sec-title">部品マスタ</div>
         <div style="display:flex;gap:8px;">
           <div class="search-bar"><span class="search-icon">🔍</span><input type="text" placeholder="コード・名称・メーカー..." id="part-search" oninput="renderParts(this.value)"></div>
+          <button class="btn btn-ghost btn-sm" onclick="exportPartsExcel()">📊 Excel出力</button>
           <button class="btn btn-primary btn-sm" onclick="openModal('part-modal');editPart(null)">＋ 部品追加</button>
         </div>
       </div>
@@ -418,7 +420,8 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
           <div class="card-body">
             <div style="display:flex;gap:8px;margin-bottom:12px;">
               <select id="nego-sup" class="fs" style="flex:1;"><option value="">商社・メーカを選択</option></select>
-              <button class="btn btn-primary" onclick="exportNegoCSV()">交渉用CSV出力</button>
+              <button class="btn btn-primary" onclick="exportNegoCSV()">CSV出力</button>
+              <button class="btn btn-primary" onclick="exportNegoExcel()">Excel出力</button>
             </div>
             <div class="empty" style="padding:15px;"><div class="empty-desc">商社ごとの部品単価、採用基板数を集計して出力します。</div></div>
           </div>
@@ -471,7 +474,10 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
     <div id="page-stock" class="page">
       <div class="sec-header">
         <div class="sec-title">在庫管理</div>
-        <button class="btn btn-primary btn-sm" onclick="openModal('stock-modal')">＋ 在庫を更新</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="exportStockExcel()">📊 Excel出力</button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('stock-modal')">＋ 在庫を更新</button>
+        </div>
       </div>
       <div class="tbl-wrap"><table><thead><tr>
         <th>部品コード</th><th>部品名</th><th>現在庫</th><th>安全在庫</th><th>ステータス</th><th>最終更新</th><th>操作</th>
@@ -1152,6 +1158,7 @@ function openBoardDetail(boardId) {
       <div><div class="cost-lbl">合計原価（1枚あたり）</div><span class="cost-val">¥${fmtNum(totalCost)}</span></div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost btn-sm" onclick="exportBomCSV('${esc(boardId)}')">📥 CSV出力</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportBomExcel('${esc(boardId)}')">📊 Excel出力</button>
       </div>
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>部品コード</th><th>部品名</th><th>員数</th><th style="text-align:right;">単価</th><th style="text-align:right;">小計</th><th style="text-align:right;">構成比</th></tr></thead><tbody>
@@ -1447,8 +1454,9 @@ function runCostSim() {
         <span class="cost-val">¥${fmtNum(total)}</span>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">1台あたり ¥${fmtNum(totalUnit)}</div>
       </div>
-      <div>
+      <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost btn-sm" onclick="exportCostCSV('${esc(boardId)}',${qty})">📥 CSV出力</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportCostExcel('${esc(boardId)}',${qty})">📊 Excel出力</button>
       </div>
     </div>
     <div class="tbl-wrap"><table>
@@ -2002,6 +2010,85 @@ function exportNegoCSV() {
   a.download = `価格交渉リスト_${supName}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   toast('CSVを出力しました', 'ok');
+}
+
+// ════════════════════════════════════════════════
+// EXCEL EXPORT (SheetJS)
+// ════════════════════════════════════════════════
+function dlExcel(dataArray, filename) {
+  if (typeof XLSX === 'undefined') { toast('Excel出力ライブラリがロードされていません','error'); return; }
+  const ws = XLSX.utils.aoa_to_sheet(dataArray);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, filename);
+}
+
+function exportPartsExcel() {
+  const parts = Object.values(DB.parts);
+  if (!parts.length) { toast('部品データがありません','error'); return; }
+  const data = [['部品コード','部品名','メーカー','公表単価','仕入先','メイン商社','生産拠点','廃番フラグ','RoHS対応','認定部品','備考','更新日時']];
+  parts.forEach(p => {
+    data.push([p.code||'', p.name||'', p.maker||'', p.price||'', p.supplier||'', p.mainSupplier||'', p.base||'', p.eol||'0', p.rohs||'0', p.certified||'0', p.note||'', p.updatedAt||'']);
+  });
+  dlExcel(data, `部品マスタ_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excelを出力しました','ok');
+}
+
+function exportStockExcel() {
+  const allCodes = [...new Set([...Object.keys(DB.parts), ...Object.keys(DB.stock)])];
+  if (!allCodes.length) { toast('在庫データがありません','error'); return; }
+  const data = [['部品コード','部品名','現在庫','安全在庫','ステータス','最終更新']];
+  allCodes.forEach(code => {
+    const p = DB.parts[code] || {};
+    const s = DB.stock[code] || {};
+    const qty = s.qty !== undefined ? parseFloat(s.qty) : '';
+    const safe = s.safe !== undefined ? parseFloat(s.safe) : '';
+    let status = '未登録';
+    if (qty !== '') status = qty === 0 ? '在庫ゼロ' : (safe > 0 && qty <= safe) ? '在庫低下' : '正常';
+    data.push([code, p.name||'', qty, safe, status, s.updatedAt||'']);
+  });
+  dlExcel(data, `在庫一覧_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excelを出力しました','ok');
+}
+
+function exportBomExcel(boardId) {
+  const boms = Object.values(DB.bom).filter(r => r.boardId === boardId);
+  if (!boms.length) { toast('対象BOMがありません','error'); return; }
+  const data = [['基板ID','部品コード','部品名','使用数量','単価','小計']];
+  boms.forEach(r => {
+    const p = DB.parts[r.partCode] || {};
+    const qty = parseFloat(r.qty||1);
+    const price = parseFloat(p.price||0);
+    data.push([boardId, r.partCode, p.name||'', qty, price, price*qty]);
+  });
+  dlExcel(data, `BOM_${boardId}.xlsx`);
+}
+
+function exportCostExcel(boardId, qty) {
+  const boms = Object.values(DB.bom).filter(r => r.boardId === boardId);
+  const data = [['基板ID','部品コード','部品名','員数','単価','小計/台', qty+'台合計']];
+  boms.forEach(r => {
+    const p = DB.parts[r.partCode] || {};
+    const bomQty = parseFloat(r.qty||1);
+    const price = parseFloat(p.price||0);
+    const sub = price * bomQty;
+    data.push([boardId, r.partCode, p.name||'', bomQty, price, sub, sub*qty]);
+  });
+  dlExcel(data, `Cost_${boardId}_x${qty}.xlsx`);
+}
+
+function exportNegoExcel() {
+  const supName = document.getElementById('nego-sup').value;
+  if (!supName) { toast('商社を選択してください', 'error'); return; }
+  const parts = Object.values(DB.parts).filter(p => p.supplier === supName || p.mainSupplier === supName || p.maker === supName);
+  if (!parts.length) { toast('対象部品がありません', 'error'); return; }
+  const data = [['部品コード','部品名','仕入先/メイン商社','メーカ','現在単価','採用基板数','RoHS','廃番','備考']];
+  parts.forEach(p => {
+    const boardCount = Object.values(DB.bom).filter(r => r.partCode === p.code).length;
+    data.push([p.code, p.name||'', p.mainSupplier||p.supplier||'', p.maker||'', parseFloat(p.price||0), boardCount, p.rohs=='1'?'対象':'', p.eol=='1'?'廃番':'', p.note||'']);
+  });
+  dlExcel(data, `価格交渉リスト_${supName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excelを出力しました', 'ok');
 }
 
 // ════════════════════════════════════════════════
