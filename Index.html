@@ -471,10 +471,12 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
       <div id="cost-result"></div>
     </div>
 
-    <div id="page-stock" class="page">
+<div id="page-stock" class="page">
       <div class="sec-header">
         <div class="sec-title">在庫管理</div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-success btn-sm" onclick="syncFromSS()">🔄 SSから同期</button>
+          
           <button class="btn btn-ghost btn-sm" onclick="exportStockExcel()">📊 Excel出力</button>
           <button class="btn btn-primary btn-sm" onclick="openModal('stock-modal')">＋ 在庫を更新</button>
         </div>
@@ -530,13 +532,25 @@ tbody tr:hover td{background:rgba(37,99,235,.025);}
       <div class="card" style="max-width:560px;">
         <div class="card-body">
           <div class="itabs">
-            <button class="itab active" data-tab="parts"    onclick="switchTab(this)">部品マスタ</button>
-            <button class="itab"        data-tab="bom"      onclick="switchTab(this)">BOM</button>
-            <button class="itab"        data-tab="machines" onclick="switchTab(this)">機種マスタ</button>
-            <button class="itab"        data-tab="boards"   onclick="switchTab(this)">基板マスタ</button>
-            <button class="itab"        data-tab="stock"    onclick="switchTab(this)">在庫</button>
+            <button class="itab active" data-tab="universal" onclick="switchTab(this)">万能インポート</button>
+            <button class="itab" data-tab="parts"    onclick="switchTab(this)">部品マスタ</button>
+            <button class="itab" data-tab="bom"      onclick="switchTab(this)">BOM</button>
+            <button class="itab" data-tab="machines" onclick="switchTab(this)">機種マスタ</button>
+            <button class="itab" data-tab="boards"   onclick="switchTab(this)">基板マスタ</button>
+            <button class="itab" data-tab="stock"    onclick="switchTab(this)">在庫</button>
           </div>
-          <div class="ipanel active" id="itab-parts">
+
+          <div class="ipanel active" id="itab-universal">
+            <div class="csv-spec">
+              <strong>🌟 万能インポート（自動仕分け）</strong><br>
+              1つのCSVから「機種」「基板」「部品」「BOM構成」をすべて自動判定して一括登録します。<br>
+              <code>機種コード</code> <code>基板ID</code> <code>品目コード</code> <code>数量</code> などの列名に対応しています。
+            </div>
+            <input type="file" id="csv-universal" accept=".csv" class="file-input" style="margin-bottom:10px;">
+            <button class="btn btn-primary" style="width:100%;justify-content:center;background:#7c3aed;" onclick="importCSV('universal')">自動仕分けして取り込む</button>
+          </div>
+
+<div class="ipanel" id="itab-parts">
             <div class="csv-spec">必須: <code>部品コード</code> 任意: <code>部品名</code> <code>メーカー名</code> <code>公表単価</code> <code>廃番フラグ</code><br>単価変更時は価格履歴に自動記録されます。</div>
             <input type="file" id="csv-parts" accept=".csv" class="file-input" style="margin-bottom:10px;">
             <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="importCSV('parts')">取り込む</button>
@@ -1631,99 +1645,202 @@ function switchTab(el) {
 }
 
 function parseCSV(text) {
-  const lines = text.split(/\r\n|\n/).filter(l=>l.trim());
-  if (lines.length < 2) return { headers:[], rows:[] };
+  text = text.replace(/^\uFEFF/, ''); // 見えない文字(BOM)を削除
+  const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+  if (lines.length < 2) return { headers: [], rows: [] };
+
   const parseRow = line => {
-    const res=[]; let cur='', inQ=false;
-    for (let i=0;i<line.length;i++){
-      const c=line[i];
-      if(c==='"'&&inQ&&line[i+1]==='"'){cur+='"';i++;}
-      else if(c==='"'){inQ=!inQ;}
-      else if(c===','&&!inQ){res.push(cur.trim());cur='';}
-      else cur+=c;
+    const res = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"' && inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { res.push(cur.trim()); cur = ''; }
+      else cur += c;
     }
     res.push(cur.trim()); return res;
   };
-  const headers = parseRow(lines[0]);
+
+  const headers = parseRow(lines[0]).map(h => h.replace(/^["']|["']$/g, '').trim());
+  
   const rows = lines.slice(1).map(l => {
     const vals = parseRow(l);
     const obj = {};
-    headers.forEach((h,i) => { if(h) obj[h] = vals[i]||''; });
+    headers.forEach((h, i) => {
+      if (h) obj[h] = (vals[i] || '').replace(/^["']|["']$/g, '').trim();
+    });
     return obj;
   });
   return { headers, rows };
 }
 
 function importCSV(type) {
-  const file = document.getElementById('csv-'+type).files[0];
+  const file = document.getElementById('csv-' + type).files[0];
   if (!file) { toast('ファイルを選択してください', 'error'); return; }
+
   const reader = new FileReader();
   reader.onerror = () => toast('ファイル読み込みエラー', 'error');
+  reader.readAsArrayBuffer(file);
+  
   reader.onload = e => {
-    const { headers, rows } = parseCSV(e.target.result);
+    const buffer = e.target.result;
+    const view = new Uint8Array(buffer);
+    let isUTF8 = false;
+    if (view.length >= 3 && view[0] === 0xEF && view[1] === 0xBB && view[2] === 0xBF) {
+      isUTF8 = true;
+    }
+    const decoder = new TextDecoder(isUTF8 ? 'utf-8' : 'shift_jis');
+    const text = decoder.decode(buffer);
+    
+    const { headers, rows } = parseCSV(text);
     if (!rows.length) { toast('データ行がありません', 'error'); return; }
-    let added=0, updated=0;
+
+    // 🌟 万能インポート（全部入りCSVの自動仕分け処理）
+    if (type === 'universal') {
+      let mAdded = 0, bAdded = 0, pAdded = 0, bomAdded = 0;
+      
+      rows.forEach(r => {
+        // 1. 機種マスタの自動登録
+        const mCode = r['機種コード'] || r['MachineCode'];
+        if (mCode) {
+          if (!DB.machines[mCode]) mAdded++;
+          DB.machines[mCode] = {
+            code: mCode,
+            name: r['機種名'] || (DB.machines[mCode] ? DB.machines[mCode].name : ''),
+            type: DB.machines[mCode] ? DB.machines[mCode].type : 'パチンコ',
+            brand: DB.machines[mCode] ? DB.machines[mCode].brand : '',
+            date: r['検定切年月'] || r['発売日'] || (DB.machines[mCode] ? DB.machines[mCode].date : ''),
+            m: DB.machines[mCode] ? DB.machines[mCode].m : '',
+            updatedAt: now()
+          };
+        }
+
+        // 2. 基板マスタの自動登録
+        const bId = r['基板ID'] || r['BoardID'];
+        if (bId) {
+          if (!DB.boards[bId]) bAdded++;
+          DB.boards[bId] = {
+            id: bId,
+            name: r['基板名'] || (DB.boards[bId] ? DB.boards[bId].name : ''),
+            category: r['区分コード'] || r['基板分類'] || (DB.boards[bId] ? DB.boards[bId].category : ''),
+            version: DB.boards[bId] ? DB.boards[bId].version : '',
+            date: DB.boards[bId] ? DB.boards[bId].date : '',
+            note: DB.boards[bId] ? DB.boards[bId].note : '',
+            updatedAt: now()
+          };
+        }
+
+        // 3. 部品マスタの自動登録
+        const pCode = r['品目コード'] || r['部品コード'] || r['PartCode'] || r['品番'];
+        if (pCode) {
+          if (!DB.parts[pCode]) pAdded++;
+          DB.parts[pCode] = {
+            code: pCode,
+            name: r['品名'] || r['部品名'] || (DB.parts[pCode] ? DB.parts[pCode].name : ''),
+            maker: r['メーカー'] || r['メーカー名'] || (DB.parts[pCode] ? DB.parts[pCode].maker : ''),
+            price: r['公表単価'] || r['単価'] || (DB.parts[pCode] ? DB.parts[pCode].price : ''),
+            supplier: r['仕入先'] || (DB.parts[pCode] ? DB.parts[pCode].supplier : ''),
+            eol: r['廃番フラグ'] || (DB.parts[pCode] ? DB.parts[pCode].eol : '0'),
+            note: r['メーカー品番'] ? `メーカー品番: ${r['メーカー品番']}` : (DB.parts[pCode] ? DB.parts[pCode].note : ''),
+            updatedAt: now()
+          };
+        }
+
+        // 4. BOM構成の自動登録
+        if (bId && pCode) {
+          const key = bId + '|' + pCode;
+          if (!DB.bom[key]) bomAdded++;
+          DB.bom[key] = {
+            boardId: bId,
+            partCode: pCode,
+            qty: r['数量'] || r['使用数量'] || '1',
+            unit: '個',
+            level: '1',
+            parentId: '',
+            type: '部品',
+            note: r['部品状況'] || r['コメント'] || ''
+          };
+        }
+      });
+      
+      saveDB(DB, 'machines'); saveDB(DB, 'boards'); saveDB(DB, 'parts'); saveDB(DB, 'bom');
+      toast(`万能取込完了: 機種${mAdded}件 / 基板${bAdded}件 / 部品${pAdded}件 / BOM構成${bomAdded}件`, 'ok');
+      renderMachines(); renderBoards(); renderParts(); renderTree();
+      return; 
+    }
+
+    // 🌟 通常の個別インポート処理
+    const hStr = headers.join(" , ");
+    if (type === 'parts' && !headers.includes('部品コード') && !headers.includes('PartCode') && !headers.includes('品番')) {
+      alert("【エラー】「部品コード」の列が見つかりません！\n\n実際に読み込まれた列名:\n[ " + hStr + " ]"); return;
+    }
+    if (type === 'bom' && !headers.includes('基板ID')) {
+      alert("【エラー】「基板ID」の列が見つかりません！\n\n実際に読み込まれた列名:\n[ " + hStr + " ]"); return;
+    }
+
+    let added = 0, updated = 0;
     if (type === 'parts') {
       rows.forEach(r => {
-        const code = r['部品コード']||r['PartCode']||r['品番']; if(!code) return;
+        const code = r['部品コード'] || r['PartCode'] || r['品番']; if (!code) return;
         const old = DB.parts[code];
         if (old && r['公表単価'] !== undefined && String(old.price) !== String(r['公表単価']) && r['公表単価'] !== '') {
-          const _entry = {date:now(),user:'CSV取込',ecn:'',target:code,type:'単価変更',before:old.price,after:r['公表単価'],note:''};
+          const _entry = { date: now(), user: 'CSV取込', ecn: '', target: code, type: '単価変更', before: old.price, after: r['公表単価'], note: '' };
           DB.changelog.push(_entry);
-          google.script.run.withSuccessHandler(()=>{}).withFailureHandler(()=>{}).apiAppendChangelog(_entry);
+          google.script.run.withSuccessHandler(() => {}).withFailureHandler(() => {}).apiAppendChangelog(_entry);
         }
         if (DB.parts[code]) updated++; else added++;
-        DB.parts[code] = { code, name:r['部品名']||'', maker:r['メーカー名']||r['Maker']||'', price:r['公表単価']||r['単価']||'', supplier:r['仕入先']||'', eol:r['廃番フラグ']||'0', note:r['備考']||'', updatedAt:now(), ...(DB.parts[code]||{}) };
-        Object.assign(DB.parts[code], {code, name:r['部品名']||DB.parts[code].name||'', maker:r['メーカー名']||DB.parts[code].maker||'', price:r['公表単価']!==undefined?r['公表単価']:DB.parts[code].price, supplier:r['仕入先']||DB.parts[code].supplier||'', eol:r['廃番フラグ']!==undefined?r['廃番フラグ']:DB.parts[code].eol||'0', updatedAt:now()});
+        DB.parts[code] = { code, name: r['部品名'] || '', maker: r['メーカー名'] || r['Maker'] || '', price: r['公表単価'] || r['単価'] || '', supplier: r['仕入先'] || '', eol: r['廃番フラグ'] || '0', note: r['備考'] || '', updatedAt: now(), ...(DB.parts[code] || {}) };
+        Object.assign(DB.parts[code], { code, name: r['部品名'] || DB.parts[code].name || '', maker: r['メーカー名'] || DB.parts[code].maker || '', price: r['公表単価'] !== undefined ? r['公表単価'] : DB.parts[code].price, supplier: r['仕入先'] || DB.parts[code].supplier || '', eol: r['廃番フラグ'] !== undefined ? r['廃番フラグ'] : DB.parts[code].eol || '0', updatedAt: now() });
       });
     } else if (type === 'bom') {
       let isProductionWarned = false;
       rows.forEach(r => {
-        const boardId=r['基板ID']||r['BoardID'], partCode=r['部品コード']||r['PartCode']||r['品番'];
-        if(!boardId||!partCode) return;
+        const boardId = r['基板ID'] || r['BoardID'], partCode = r['部品コード'] || r['PartCode'] || r['品番'];
+        if (!boardId || !partCode) return;
         const b = DB.boards[boardId];
         if (b && b.status === '量産中' && !isProductionWarned) {
           isProductionWarned = true;
-          alert('【警告】量産中の基板( '+boardId+' など)のBOMを変更しようとしています。ECN(設計変更通知)を必ず発行してください。');
+          alert('【警告】量産中の基板( ' + boardId + ' など)のBOMを変更しようとしています。ECNを必ず発行してください。');
         }
-        const key = boardId+'|'+partCode;
+        const key = boardId + '|' + partCode;
         if (DB.bom[key]) updated++; else added++;
-        DB.bom[key] = { boardId, partCode, qty:r['使用数量']||r['数量']||'1', unit:r['単位']||'個', level:r['レベル']||'1', parentId:r['親ID']||'', type:r['種別']||'部品', note:r['備考']||'' };
-        // 基板マスタに未登録なら自動追加
-        if (!DB.boards[boardId]) DB.boards[boardId] = { id:boardId, name:boardId, category:'', version:'', date:'', updatedAt:now() };
-        // 部品マスタに未登録なら自動追加
-        if (!DB.parts[partCode]) DB.parts[partCode] = { code:partCode, name:'', maker:'', price:'', supplier:'', eol:'0', updatedAt:now() };
+        DB.bom[key] = { boardId, partCode, qty: r['使用数量'] || r['数量'] || '1', unit: r['単位'] || '個', level: r['レベル'] || '1', parentId: r['親ID'] || '', type: r['種別'] || '部品', note: r['備考'] || '' };
+        if (!DB.boards[boardId]) DB.boards[boardId] = { id: boardId, name: boardId, category: '', version: '', date: '', updatedAt: now() };
+        if (!DB.parts[partCode]) DB.parts[partCode] = { code: partCode, name: '', maker: '', price: '', supplier: '', eol: '0', updatedAt: now() };
       });
     } else if (type === 'machines') {
       rows.forEach(r => {
-        const code=r['機種コード']||r['MachineCode']; if(!code) return;
+        const code = r['機種コード'] || r['MachineCode']; if (!code) return;
         if (DB.machines[code]) updated++; else added++;
-        DB.machines[code] = { code, name:r['機種名']||'', type:r['種類']||'パチンコ', brand:r['ブランド']||'', date:r['発売日']||'', m:r['M基板']||'', d:r['D基板']||'', de:r['DE基板']||'', e:r['E基板']||'', c:r['C基板']||'', s:r['S基板']||'', updatedAt:now() };
+        DB.machines[code] = { code, name: r['機種名'] || '', type: r['種類'] || 'パチンコ', brand: r['ブランド'] || '', date: r['発売日'] || '', m: r['M基板'] || '', d: r['D基板'] || '', de: r['DE基板'] || '', e: r['E基板'] || '', c: r['C基板'] || '', s: r['S基板'] || '', updatedAt: now() };
       });
     } else if (type === 'boards') {
       rows.forEach(r => {
-        const id=r['基板ID']||r['BoardID']; if(!id) return;
+        const id = r['基板ID'] || r['BoardID']; if (!id) return;
         if (DB.boards[id]) updated++; else added++;
-        DB.boards[id] = { id, name:r['基板名']||'', category:r['基板分類']||'', version:r['バージョン']||'', date:r['作成日']||'', note:r['備考']||'', updatedAt:now() };
+        DB.boards[id] = { id, name: r['基板名'] || '', category: r['基板分類'] || '', version: r['バージョン'] || '', date: r['作成日'] || '', note: r['備考'] || '', updatedAt: now() };
       });
     } else if (type === 'stock') {
       rows.forEach(r => {
-        const code=r['部品コード']||r['PartCode']||r['品番']; if(!code) return;
+        const code = r['部品コード'] || r['PartCode'] || r['品番']; if (!code) return;
         if (DB.stock[code]) updated++; else added++;
-        DB.stock[code] = { code, qty:r['在庫数']||r['Stock']||r['在庫']||'0', safe:r['安全在庫']||'0', note:r['備考']||'', updatedAt:now() };
+        DB.stock[code] = { code, qty: r['在庫数'] || r['Stock'] || r['在庫'] || '0', safe: r['安全在庫'] || '0', note: r['備考'] || '', updatedAt: now() };
       });
     }
-    const _typeMap = {parts:'parts',bom:'bom',machines:'machines',boards:'boards',stock:'stock'};
-    saveDB(DB, _typeMap[type] || null);
-    if (type === 'bom') saveDB(DB, 'boards'); // BOM取込時は基板マスタも自動生成されるため
-    toast(`${type} — 追加 ${added}件 / 更新 ${updated}件 (スプレッドシートに同期中...)`, 'ok');
-    
-    // 【修正】DB変数を破壊しないように「DB = 」を削除し、データの再読み込みのみを実行
-    loadDB();
-  };
-  reader.readAsText(file, 'UTF-8');
-}
 
+    const _typeMap = { parts: 'parts', bom: 'bom', machines: 'machines', boards: 'boards', stock: 'stock' };
+    saveDB(DB, _typeMap[type] || null);
+    if (type === 'bom') saveDB(DB, 'boards');
+    
+    toast(`${type} — 追加 ${added}件 / 更新 ${updated}件`, 'ok');
+
+    if (type === 'parts') renderParts();
+    if (type === 'bom') renderTree();
+    if (type === 'machines') renderMachines();
+    if (type === 'boards') renderBoards();
+    if (type === 'stock') renderStock();
+  };
+}
 // ════════════════════════════════════════════════
 // SS LINK
 // ════════════════════════════════════════════════
