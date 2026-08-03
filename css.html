@@ -104,6 +104,55 @@ select:focus{border-color:var(--primary);}
 .zukan-empty{ padding:60px 20px; text-align:center; color:var(--text-muted); }
 .zukan-empty-icon{ font-size:36px; margin-bottom:10px; }
 
+/* テンプレート案内バナー（フロー・マニュアル共通） */
+.template-banner{ background:linear-gradient(135deg,#eef2ff,#f7f8ff); border:1px solid #dbe3ff; border-radius:var(--radius); padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.template-banner-icon{ font-size:22px; flex-shrink:0; }
+.template-banner-body{ flex:1; min-width:220px; }
+.template-banner-title{ font-size:12.5px; font-weight:700; color:var(--text); }
+.template-banner-sub{ font-size:11px; color:var(--text-sub); margin-top:2px; }
+.template-banner-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.import-box{ background:var(--card); border:1px solid var(--border-light); border-radius:var(--radius-sm); padding:10px 12px; margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.import-box input{ flex:1; min-width:220px; }
+
+/* フロー詳細ページ（3ペイン） */
+.flow-detail-header{ display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+.flow-detail-header h2{ font-size:17px; font-weight:700; }
+.flow-detail-grid{ display:grid; grid-template-columns:260px 1fr 280px; gap:16px; align-items:start; }
+@media (max-width:1100px){ .flow-detail-grid{ grid-template-columns:1fr; } }
+
+.flow-step-rail{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm); border:1px solid var(--border-light); padding:8px; max-height:calc(100vh - 200px); overflow-y:auto; }
+.flow-step-chip{ display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:var(--radius-sm); cursor:pointer; transition:background .15s; margin-bottom:2px; }
+.flow-step-chip:hover{ background:var(--bg); }
+.flow-step-chip.active{ background:var(--primary-light); }
+.flow-step-chip-num{ width:24px; height:24px; border-radius:50%; background:#eef1f5; color:var(--text-sub); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.flow-step-chip.done .flow-step-chip-num{ background:var(--success); color:#fff; }
+.flow-step-chip.branch .flow-step-chip-num{ background:var(--warning); color:#fff; border-radius:6px; }
+.flow-step-chip-label{ font-size:12px; font-weight:600; color:var(--text); line-height:1.35; flex:1; }
+.flow-step-chip.active .flow-step-chip-label{ color:var(--primary); }
+
+.flow-detail-main{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm); border:1px solid var(--border-light); padding:20px 22px; min-height:300px; }
+.flow-detail-main-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.flow-detail-main-title{ font-size:16px; font-weight:700; }
+.flow-detail-main-detail{ font-size:13px; line-height:1.9; white-space:pre-wrap; color:var(--text); margin-bottom:16px; }
+.flow-branch-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+.flow-branch-box{ border-radius:var(--radius-sm); padding:12px 14px; font-size:12px; line-height:1.7; }
+.flow-branch-box.yes{ background:#f0fdf4; border:1px solid #bbf7d0; }
+.flow-branch-box.no{ background:#fef2f2; border:1px solid #fecaca; }
+.flow-detail-manuals{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+
+.flow-detail-side{ display:flex; flex-direction:column; gap:14px; }
+.flow-side-card{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm); border:1px solid var(--border-light); padding:16px; }
+.flow-side-card h4{ font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:10px; letter-spacing:.02em; }
+.flow-side-card textarea{ width:100%; min-height:120px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12.5px; font-family:inherit; resize:vertical; }
+
+/* 構造化ステップエディタ（フロー編集モーダル） */
+.step-editor-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.step-editor-row{ border:1px solid var(--border-light); border-radius:var(--radius-sm); padding:10px 12px; background:#fafbff; }
+.step-editor-row-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.step-editor-row-head input[type=text]{ padding:5px 8px; font-size:12px; }
+.step-editor-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.step-editor-grid textarea, .step-editor-grid input{ font-size:12px; padding:6px 8px; }
+
 /* マニュアル・フロー リスト */
 .kb-list{ display:flex; flex-direction:column; gap:10px; }
 .kb-item{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm); border:1px solid var(--border-light); padding:14px 16px; display:flex; align-items:flex-start; gap:12px; }

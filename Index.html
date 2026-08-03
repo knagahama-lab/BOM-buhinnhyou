@@ -76,6 +76,19 @@
       <div class="page-heading">
         <div><h2>📚 マニュアル管理</h2><p>業務マニュアル・操作手順書を一元管理します。</p></div>
       </div>
+      <div class="template-banner">
+        <div class="template-banner-icon">🧩</div>
+        <div class="template-banner-body">
+          <div class="template-banner-title">マニュアルは雛形から作るのが簡単です</div>
+          <div class="template-banner-sub">Word／スライドの雛形をコピーしてそのまま編集、または雛形をダウンロードして加筆・アップロードできます。</div>
+        </div>
+        <div class="template-banner-actions">
+          <button class="btn btn-outline btn-sm" onclick="downloadTemplate('manualDoc')">⬇ Word雛形をダウンロード</button>
+          <button class="btn btn-primary btn-sm" onclick="copyTemplateAndCreateManual('manualDoc')">📄 Word雛形からマニュアル作成</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadTemplate('manualSlides')">⬇ スライド雛形をダウンロード</button>
+          <button class="btn btn-primary btn-sm" onclick="copyTemplateAndCreateManual('manualSlides')">🖼 スライド雛形からマニュアル作成</button>
+        </div>
+      </div>
       <div class="filter-bar">
         <div class="search-box"><input type="text" id="manual-search" placeholder="タイトル・カテゴリ・タグで検索..." oninput="renderManualList()"></div>
         <select id="manual-filter-category" onchange="renderManualList()"><option value="">すべてのカテゴリ</option></select>
@@ -89,12 +102,54 @@
       <div class="page-heading">
         <div><h2>🔄 フロー管理</h2><p>業務フロー・作業手順の流れを管理します。</p></div>
       </div>
+      <div class="template-banner">
+        <div class="template-banner-icon">🧩</div>
+        <div class="template-banner-body">
+          <div class="template-banner-title">フローは雛形から作るのが簡単です</div>
+          <div class="template-banner-sub">Excel雛形をダウンロードして加筆、またはスプレッドシート雛形をコピーして直接編集→URLを貼り付けて取り込めます。</div>
+        </div>
+        <div class="template-banner-actions">
+          <button class="btn btn-outline btn-sm" onclick="downloadTemplate('flow')">⬇ Excel雛形をダウンロード</button>
+          <button class="btn btn-primary btn-sm" onclick="copyTemplateAndOpen('flow')">📝 雛形をコピーして編集</button>
+        </div>
+      </div>
       <div class="filter-bar">
         <div class="search-box"><input type="text" id="flow-search" placeholder="タイトル・カテゴリで検索..." oninput="renderFlowList()"></div>
         <select id="flow-filter-category" onchange="renderFlowList()"><option value="">すべてのカテゴリ</option></select>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('flow-search').value='';renderFlowList()">クリア</button>
       </div>
       <div id="flow-list" class="kb-list"></div>
+    </div>
+
+    <!-- ══════════ フロー詳細（ステップ実行ビュー） ══════════ -->
+    <div id="page-flow-detail" class="page">
+      <div class="flow-detail-header">
+        <button class="btn btn-outline btn-sm" onclick="showPage('flow')">← フロー一覧へ</button>
+        <h2 id="flow-detail-page-title">フロータイトル</h2>
+        <span class="badge badge-info" id="flow-detail-page-category"></span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-outline btn-sm" onclick="editFlowFromDetailPage()">✏️ 編集</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteFlowFromDetailPage()">🗑 削除</button>
+      </div>
+      <p id="flow-detail-page-summary" style="font-size:12.5px;color:var(--text-sub);margin:-8px 0 16px;white-space:pre-wrap;"></p>
+      <div class="flow-detail-grid">
+        <div class="flow-step-rail" id="flow-detail-rail"></div>
+        <div class="flow-detail-main" id="flow-detail-main"></div>
+        <div class="flow-detail-side">
+          <div class="flow-side-card">
+            <h4>📝 メモ（このステップ用）</h4>
+            <textarea id="flow-step-note" placeholder="気づいた点や補足をメモできます" onblur="saveStepNote()"></textarea>
+          </div>
+          <div class="flow-side-card">
+            <h4>📚 関連マニュアル</h4>
+            <div id="flow-detail-manual-links" style="display:flex;flex-direction:column;gap:6px;"></div>
+          </div>
+          <div class="flow-side-card">
+            <h4>ℹ️ フロー情報</h4>
+            <div style="font-size:11.5px;color:var(--text-sub);line-height:1.9;" id="flow-detail-meta"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ══════════ 設定 ══════════ -->
@@ -259,18 +314,6 @@
   </div>
 </div>
 
-<!-- ══════════ フロー 詳細モーダル ══════════ -->
-<div class="modal-overlay" id="flow-detail-modal">
-  <div class="modal">
-    <div class="modal-head"><h3 id="flow-detail-title">フロー詳細</h3><button class="modal-close" onclick="closeModal('flow-detail-modal')">✕</button></div>
-    <div class="modal-body" id="flow-detail-body"></div>
-    <div class="modal-foot">
-      <button class="btn btn-danger" onclick="deleteFlowFromDetail()">🗑 削除</button>
-      <button class="btn btn-primary" onclick="editFlowFromDetail()">✏️ 編集</button>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════ フロー 編集モーダル ══════════ -->
 <div class="modal-overlay" id="flow-edit-modal">
   <div class="modal">
@@ -281,7 +324,19 @@
       <div class="form-field"><label>カテゴリ</label><input type="text" id="flow-category" list="flow-category-list" placeholder="例: 営業"></div>
       <datalist id="flow-category-list"></datalist>
       <div class="form-field"><label>概要</label><textarea id="flow-summary" rows="2"></textarea></div>
-      <div class="form-field"><label>ステップ内容（1行につき1ステップ）</label><textarea id="flow-steps" rows="8" placeholder="① 見積依頼を受領&#10;② 構成表を確認&#10;③ 見積台帳に登録..."></textarea></div>
+      <div class="form-field">
+        <label>ステップ内容</label>
+        <div class="import-box">
+          <input type="text" id="flow-import-sheet-url" placeholder="記入済みスプレッドシート（雛形のコピー）のURLを貼り付け">
+          <button type="button" class="btn btn-outline btn-sm" onclick="importFlowFromSheet()">📥 取り込む</button>
+        </div>
+        <div id="flow-import-status" style="font-size:11px;color:var(--text-sub);margin:4px 0 10px;"></div>
+        <div class="step-editor-list" id="step-editor-list"></div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="addStepRow('step')">＋ ステップを追加</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="addStepRow('branch')">＋ 分岐を追加</button>
+        </div>
+      </div>
       <div class="form-field">
         <label>図解URL</label>
         <div style="display:flex;gap:8px;align-items:center;">

@@ -52,6 +52,20 @@ function _fillDatalist(id, values){
   const dl = document.getElementById(id); if(!dl) return;
   dl.innerHTML = values.map(v=>`<option value="${_esc(v)}">`).join('');
 }
+// フローのステップ（JSON配列）をパース。旧形式（改行区切りの自由テキスト）や壊れたJSONはフォールバックで1ステップずつに変換
+function _parseSteps(stepsStr){
+  const s = String(stepsStr||'').trim();
+  if (!s) return [];
+  try {
+    const arr = JSON.parse(s);
+    if (Array.isArray(arr)) return arr;
+  } catch(e) { /* フォールバックへ */ }
+  return s.split('\n').map(line=>line.trim()).filter(Boolean).map((line,i) => ({
+    no:String(i+1), type:'step', title:line, detail:'', owner:'',
+    branchYes:'', branchNo:'', nextNo:'', manualIds:'', refLink:'', note:'', done:false
+  }));
+}
+function _stepsToJson(steps){ return JSON.stringify(steps||[]); }
 
 // ── サイドバー / ページ切替 ──
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('collapsed'); }
@@ -114,6 +128,47 @@ function uploadToField(inputEl, targetFieldId){
   };
   reader.readAsDataURL(f);
   inputEl.value = '';
+}
+
+// ════════════════════════════════════════════════════════════
+// テンプレート（雛形）
+// ════════════════════════════════════════════════════════════
+let _templateInfo = null;
+function _withTemplateInfo(cb){
+  if (_templateInfo) { cb(_templateInfo); return; }
+  showToast('雛形を準備しています...');
+  google.script.run.withSuccessHandler(res => {
+    if (!res || !res.success) { showToast('雛形の取得に失敗しました: ' + (res&&res.error||''), true); return; }
+    delete res.success;
+    _templateInfo = res;
+    cb(_templateInfo);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiGetTemplateInfo();
+}
+function downloadTemplate(kind){
+  _withTemplateInfo(info => {
+    const t = info[kind]; if (!t) { showToast('テンプレートが見つかりません', true); return; }
+    window.open(t.downloadUrl, '_blank');
+  });
+}
+function copyTemplateAndOpen(kind){
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) { showToast('雛形をコピーしました'); window.open(res.url, '_blank'); }
+    else showToast('コピー失敗: ' + (res&&res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiCopyTemplate({ kind });
+}
+function copyTemplateAndCreateManual(kind){
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) {
+      showToast('雛形をコピーしました。続けて内容を編集してください');
+      window.open(res.url, '_blank');
+      openManualEditModal(null);
+      document.getElementById('manual-title').value = res.name.replace(/_\d{8}_\d{4}$/, '');
+      document.getElementById('manual-file-url').value = res.url;
+    } else showToast('コピー失敗: ' + (res&&res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiCopyTemplate({ kind });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -415,6 +470,9 @@ function deleteManual(id){
 // ════════════════════════════════════════════════════════════
 // フロー管理
 // ════════════════════════════════════════════════════════════
+let _editingSteps = [];                                    // フロー編集モーダルの作業用ステップ配列
+let _flowDetailId = null, _flowDetailSteps = [], _flowDetailStepIdx = 0; // フロー詳細ページの状態
+
 function _populateFlowFilters(){
   const list = Object.values(DATA.flows);
   _fillSelect(document.getElementById('flow-filter-category'), _uniqSorted(list.map(f=>f.category)), 'すべてのカテゴリ');
@@ -433,59 +491,85 @@ function renderFlowList(){
   const el = document.getElementById('flow-list');
   if (list.length === 0) { el.innerHTML = `<div class="zukan-empty"><div class="zukan-empty-icon">📭</div>該当するフローがありません</div>`; return; }
   el.innerHTML = list.map(f => {
-    const stepCount = _csv(f.steps.replace(/\n/g,',')).length;
-    return `<div class="kb-item" style="cursor:pointer;" onclick="openFlowDetail('${_esc(f.id).replace(/'/g,"\\'")}')">
+    const steps = _parseSteps(f.steps);
+    const doneCount = steps.filter(s=>s.done).length;
+    return `<div class="kb-item" style="cursor:pointer;" onclick="showFlowDetailPage('${_esc(f.id).replace(/'/g,"\\'")}')">
       <div class="kb-item-icon">🔄</div>
       <div class="kb-item-body">
         <div class="kb-item-title">${_esc(f.title)}</div>
         <div class="kb-item-meta">
           ${f.category?`<span class="badge badge-info">${_esc(f.category)}</span>`:''}
-          ${f.steps?` ・ ${stepCount}ステップ`:''}
+          ${steps.length?` ・ ${steps.length}ステップ（完了${doneCount}）`:' ・ ステップ未登録'}
         </div>
         ${f.summary?`<div class="kb-item-summary">${_esc(f.summary)}</div>`:''}
       </div>
     </div>`;
   }).join('');
 }
-function openFlowDetail(id){
-  const f = DATA.flows[id]; if(!f) return;
-  document.getElementById('flow-detail-title').textContent = '🔄 ' + f.title;
-  const steps = String(f.steps||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  const manuals = _csv(f.manualIds).map(mid => DATA.manuals[mid]).filter(Boolean);
-  document.getElementById('flow-detail-body').innerHTML = `
-    ${f.category?`<span class="badge badge-info" style="margin-bottom:10px;">${_esc(f.category)}</span>`:''}
-    ${f.summary?`<p style="font-size:12.5px;margin:10px 0;white-space:pre-wrap;">${_esc(f.summary)}</p>`:''}
-    ${steps.length?`<ol style="padding-left:20px;font-size:12.5px;line-height:2;">${steps.map(s=>`<li>${_esc(s)}</li>`).join('')}</ol>`:''}
-    ${f.diagramUrl?`<div style="margin-top:12px;"><a class="btn btn-outline btn-sm" href="${_esc(f.diagramUrl)}" target="_blank">🖼 図解を開く</a></div>`:''}
-    ${manuals.length?`<div style="margin-top:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📚 関連マニュアル</div>${manuals.map(mn=>`<a href="${_esc(mn.fileUrl)||'#'}" target="_blank" class="badge badge-default" style="margin:2px 4px 2px 0;text-decoration:none;">${_esc(mn.title)}</a>`).join('')}</div>`:''}
-    ${f.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(f.note)}</div>`:''}
-  `;
-  document.getElementById('flow-detail-modal').dataset.id = id;
-  openModal('flow-detail-modal');
+
+// ── フロー編集モーダル：構造化ステップエディタ ──
+function renderStepEditor(){
+  const el = document.getElementById('step-editor-list'); if(!el) return;
+  if (_editingSteps.length === 0) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);padding:6px 0 10px;">ステップがありません。「＋ ステップを追加」、または雛形スプレッドシートから取り込んでください。</div>`; return; }
+  el.innerHTML = _editingSteps.map((s,i) => `
+    <div class="step-editor-row">
+      <div class="step-editor-row-head">
+        <input type="text" value="${_esc(s.no)}" style="width:44px;" onchange="_editingSteps[${i}].no=this.value" title="No">
+        <select onchange="_editingSteps[${i}].type=this.value" style="width:90px;">
+          <option value="step" ${s.type!=='branch'?'selected':''}>ステップ</option>
+          <option value="branch" ${s.type==='branch'?'selected':''}>分岐</option>
+        </select>
+        <input type="text" value="${_esc(s.title)}" placeholder="タイトル" style="flex:1;" onchange="_editingSteps[${i}].title=this.value">
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeStepRow(${i})">🗑</button>
+      </div>
+      <div class="step-editor-grid">
+        <textarea rows="2" placeholder="詳細内容" onchange="_editingSteps[${i}].detail=this.value">${_esc(s.detail)}</textarea>
+        <input type="text" value="${_esc(s.owner)}" placeholder="担当" onchange="_editingSteps[${i}].owner=this.value">
+        <input type="text" value="${_esc(s.branchYes)}" placeholder="分岐:Yes条件" onchange="_editingSteps[${i}].branchYes=this.value">
+        <input type="text" value="${_esc(s.branchNo)}" placeholder="分岐:No条件" onchange="_editingSteps[${i}].branchNo=this.value">
+        <input type="text" value="${_esc(s.nextNo)}" placeholder="次のステップNo(分岐時)" onchange="_editingSteps[${i}].nextNo=this.value">
+        <input type="text" value="${_esc(s.manualIds)}" placeholder="関連マニュアルID" onchange="_editingSteps[${i}].manualIds=this.value">
+        <input type="text" value="${_esc(s.refLink)}" placeholder="参考リンク" onchange="_editingSteps[${i}].refLink=this.value">
+        <input type="text" value="${_esc(s.note)}" placeholder="備考" onchange="_editingSteps[${i}].note=this.value">
+      </div>
+    </div>`).join('');
 }
-function editFlowFromDetail(){
-  const id = document.getElementById('flow-detail-modal').dataset.id;
-  closeModal('flow-detail-modal');
-  openFlowEditModal(id);
+function addStepRow(type){
+  _editingSteps.push({ no:String(_editingSteps.length+1), type: type==='branch'?'branch':'step', title:'', detail:'', owner:'', branchYes:'', branchNo:'', nextNo:'', manualIds:'', refLink:'', note:'', done:false });
+  renderStepEditor();
 }
-function deleteFlowFromDetail(){
-  const id = document.getElementById('flow-detail-modal').dataset.id;
-  if (!confirm('このフローを削除しますか？')) return;
-  delete DATA.flows[id];
+function removeStepRow(i){ _editingSteps.splice(i,1); renderStepEditor(); }
+
+function importFlowFromSheet(){
+  const url = document.getElementById('flow-import-sheet-url').value.trim();
+  if (!url) { showToast('スプレッドシートのURLを入力してください', true); return; }
+  const statusEl = document.getElementById('flow-import-status');
+  statusEl.innerHTML = '⏳ 取り込み中...';
   google.script.run.withSuccessHandler(res => {
-    if (res.success) { showToast('削除しました'); closeModal('flow-detail-modal'); renderFlowList(); }
-    else showToast('削除失敗: ' + (res.error||''), true);
-  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
-    .apiSaveFlows(DATA.flows);
+    if (res && res.success) {
+      _editingSteps = res.steps;
+      renderStepEditor();
+      statusEl.innerHTML = `<span style="color:var(--success);">✅ 「${_esc(res.sourceName)}」から${res.steps.length}件のステップを取り込みました</span>`;
+      showToast('取り込みました');
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + _esc((res&&res.error)||'取り込み失敗') + '</span>';
+    }
+  }).withFailureHandler(() => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>'; })
+    .apiImportFlowFromSheet({ sheetUrl: url });
 }
+
 function openFlowEditModal(id){
   _populateFlowFilters();
   const f = id ? DATA.flows[id] : null;
   document.getElementById('flow-edit-title').textContent = f ? '📝 フローを編集' : '📝 フローを登録';
   const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
   sv('flow-id', id||''); sv('flow-title', f?f.title:''); sv('flow-category', f?f.category:'');
-  sv('flow-summary', f?f.summary:''); sv('flow-steps', f?f.steps:'');
+  sv('flow-summary', f?f.summary:'');
   sv('flow-diagram-url', f?f.diagramUrl:''); sv('flow-manual-ids', f?f.manualIds:''); sv('flow-note', f?f.note:'');
+  sv('flow-import-sheet-url', '');
+  document.getElementById('flow-import-status').textContent = '';
+  _editingSteps = f ? _parseSteps(f.steps) : [];
+  renderStepEditor();
   openModal('flow-edit-modal');
 }
 function saveFlow(){
@@ -494,12 +578,110 @@ function saveFlow(){
   if (!title) { showToast('タイトルは必須です', true); return; }
   const id = v('flow-id') || _genId('FL');
   DATA.flows[id] = {
-    id, title, category:v('flow-category'), summary:v('flow-summary'), steps:v('flow-steps'),
+    id, title, category:v('flow-category'), summary:v('flow-summary'), steps:_stepsToJson(_editingSteps),
     diagramUrl:v('flow-diagram-url'), manualIds:v('flow-manual-ids'), note:v('flow-note'), updatedAt:_now()
   };
   google.script.run.withSuccessHandler(res => {
-    if (res.success) { showToast('保存しました'); closeModal('flow-edit-modal'); renderFlowList(); }
+    if (res.success) {
+      showToast('保存しました'); closeModal('flow-edit-modal'); renderFlowList();
+      if (_currentPage === 'flow-detail' && _flowDetailId === id) showFlowDetailPage(id);
+    }
     else showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveFlows(DATA.flows);
+}
+
+// ── フロー詳細ページ（JobStation風：ステップ一覧→詳細→関連マニュアル） ──
+function showFlowDetailPage(id){
+  const f = DATA.flows[id]; if(!f) return;
+  _flowDetailId = id;
+  _flowDetailSteps = _parseSteps(f.steps);
+  _flowDetailStepIdx = 0;
+  showPage('flow-detail');
+  document.getElementById('topbar-page-title').textContent = f.title;
+  document.getElementById('flow-detail-page-title').textContent = '🔄 ' + f.title;
+  const catEl = document.getElementById('flow-detail-page-category');
+  catEl.textContent = f.category || ''; catEl.style.display = f.category ? '' : 'none';
+  document.getElementById('flow-detail-page-summary').textContent = f.summary || '';
+  const doneCount = _flowDetailSteps.filter(s=>s.done).length;
+  document.getElementById('flow-detail-meta').innerHTML = `
+    カテゴリ: ${_esc(f.category)||'—'}<br>
+    ステップ数: ${_flowDetailSteps.length}（完了 ${doneCount}）<br>
+    更新日時: ${_esc((f.updatedAt||'').slice(0,10))||'—'}
+    ${f.diagramUrl?`<br><a href="${_esc(f.diagramUrl)}" target="_blank">🖼 図解を開く</a>`:''}
+  `;
+  const flowManuals = _csv(f.manualIds).map(mid => DATA.manuals[mid]).filter(Boolean);
+  document.getElementById('flow-detail-manual-links').innerHTML = flowManuals.length
+    ? flowManuals.map(mn=>`<a class="btn btn-outline btn-sm" href="${_esc(mn.fileUrl)||'#'}" target="_blank">📄 ${_esc(mn.title)}</a>`).join('')
+    : '<span style="font-size:11.5px;color:var(--text-muted);">なし</span>';
+  _renderFlowRail();
+  _selectFlowStep(0);
+}
+function _renderFlowRail(){
+  const rail = document.getElementById('flow-detail-rail'); if(!rail) return;
+  if (_flowDetailSteps.length === 0) { rail.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--text-sub);">ステップが未登録です。「✏️ 編集」から追加してください。</div>`; return; }
+  rail.innerHTML = _flowDetailSteps.map((s,i) => `
+    <div class="flow-step-chip ${i===_flowDetailStepIdx?'active':''} ${s.done?'done':''} ${s.type==='branch'?'branch':''}" onclick="_selectFlowStep(${i})">
+      <div class="flow-step-chip-num">${s.done?'✓':_esc(s.no||(i+1))}</div>
+      <div class="flow-step-chip-label">${_esc(s.title)||'（無題のステップ）'}</div>
+    </div>`).join('');
+}
+function _selectFlowStep(idx){
+  const main = document.getElementById('flow-detail-main');
+  if (_flowDetailSteps.length === 0) { main.innerHTML = `<div class="zukan-empty"><div class="zukan-empty-icon">📭</div>ステップが未登録です</div>`; return; }
+  _flowDetailStepIdx = Math.max(0, Math.min(idx, _flowDetailSteps.length-1));
+  _renderFlowRail();
+  const s = _flowDetailSteps[_flowDetailStepIdx];
+  const manuals = _csv(s.manualIds).map(mid => DATA.manuals[mid]).filter(Boolean);
+  const branchHtml = s.type === 'branch' ? `
+    <div class="flow-branch-row">
+      <div class="flow-branch-box yes"><strong>✅ Yes：</strong>${_esc(s.branchYes)||'—'}</div>
+      <div class="flow-branch-box no"><strong>❌ No：</strong>${_esc(s.branchNo)||'—'}</div>
+    </div>
+    ${s.nextNo?`<div style="font-size:11.5px;color:var(--text-sub);margin:-8px 0 16px;">→ 分岐後のステップNo: ${_esc(s.nextNo)}</div>`:''}` : '';
+  main.innerHTML = `
+    <div class="flow-detail-main-head">
+      <div class="flow-detail-main-title">${s.type==='branch'?'🔀':'📌'} ${_esc(s.title)||'（無題のステップ）'}</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;">
+        <input type="checkbox" ${s.done?'checked':''} onchange="toggleStepDone(this.checked)"> このステップを完了にする
+      </label>
+    </div>
+    ${s.owner?`<div style="font-size:11.5px;color:var(--text-sub);margin-bottom:10px;">👤 担当: ${_esc(s.owner)}</div>`:''}
+    ${branchHtml}
+    <div class="flow-detail-main-detail">${_esc(s.detail)||'（詳細は未記入です）'}</div>
+    ${s.refLink?`<div style="margin-bottom:12px;"><a class="btn btn-outline btn-sm" href="${_esc(s.refLink)}" target="_blank">🔗 参考リンクを開く</a></div>`:''}
+    ${manuals.length?`<div><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:6px;">📚 このステップのマニュアル</div><div class="flow-detail-manuals">${manuals.map(mn=>`<a class="btn btn-outline btn-sm" href="${_esc(mn.fileUrl)||'#'}" target="_blank">📄 ${_esc(mn.title)}</a>`).join('')}</div></div>`:''}
+  `;
+  document.getElementById('flow-step-note').value = s.note || '';
+}
+function toggleStepDone(checked){
+  if (!_flowDetailSteps[_flowDetailStepIdx]) return;
+  _flowDetailSteps[_flowDetailStepIdx].done = checked;
+  _renderFlowRail();
+  _persistFlowDetailSteps();
+}
+function saveStepNote(){
+  if (!_flowDetailSteps[_flowDetailStepIdx]) return;
+  _flowDetailSteps[_flowDetailStepIdx].note = document.getElementById('flow-step-note').value;
+  _persistFlowDetailSteps();
+}
+function _persistFlowDetailSteps(){
+  if (!_flowDetailId || !DATA.flows[_flowDetailId]) return;
+  DATA.flows[_flowDetailId].steps = _stepsToJson(_flowDetailSteps);
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveFlows(DATA.flows);
+}
+function editFlowFromDetailPage(){ if (_flowDetailId) openFlowEditModal(_flowDetailId); }
+function deleteFlowFromDetailPage(){
+  if (!_flowDetailId) return;
+  if (!confirm('このフローを削除しますか？')) return;
+  const id = _flowDetailId;
+  delete DATA.flows[id];
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('削除しました'); showPage('flow'); renderFlowList(); }
+    else showToast('削除失敗: ' + (res.error||''), true);
   }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
     .apiSaveFlows(DATA.flows);
 }
