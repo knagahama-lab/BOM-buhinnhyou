@@ -171,6 +171,60 @@ function copyTemplateAndCreateManual(kind){
     .apiCopyTemplate({ kind });
 }
 
+// ── 機種・基板の一括取り込み（雛形スプレッドシートから） ──
+function importModelsFromSheet(){
+  const url = document.getElementById('model-import-sheet-url').value.trim();
+  if (!url) { showToast('スプレッドシートのURLを入力してください', true); return; }
+  const statusEl = document.getElementById('model-import-status');
+  statusEl.innerHTML = '⏳ 取り込み中...';
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) {
+      res.models.forEach(m => { DATA.models[m.code] = Object.assign({ type:'', date:'', photoUrl:'', summary:'', features:'', studyNote:'', manualIds:'', note:'', updatedAt:_now() }, m); });
+      google.script.run.withSuccessHandler(res2 => {
+        if (res2.success) {
+          statusEl.innerHTML = `<span style="color:var(--success);">✅ 「${_esc(res.sourceName)}」から${res.models.length}件を取り込みました</span>`;
+          showToast('取り込みました'); document.getElementById('model-import-sheet-url').value=''; renderModelGrid();
+        } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ 保存失敗: ' + _esc(res2.error||'') + '</span>';
+      }).withFailureHandler(() => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>'; })
+        .apiSaveModels(DATA.models);
+    } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + _esc((res&&res.error)||'取り込み失敗') + '</span>';
+  }).withFailureHandler(() => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>'; })
+    .apiImportModelsFromSheet({ sheetUrl: url });
+}
+function importBoardsFromSheet(){
+  const url = document.getElementById('board-import-sheet-url').value.trim();
+  if (!url) { showToast('スプレッドシートのURLを入力してください', true); return; }
+  const statusEl = document.getElementById('board-import-status');
+  statusEl.innerHTML = '⏳ 取り込み中...';
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) {
+      res.boards.forEach(b => { DATA.boards[b.id] = Object.assign({ version:'', status:'', photoUrl:'', summary:'', mainParts:'', studyPoint:'', relatedModels:'', note:'', updatedAt:_now() }, b); });
+      google.script.run.withSuccessHandler(res2 => {
+        if (res2.success) {
+          statusEl.innerHTML = `<span style="color:var(--success);">✅ 「${_esc(res.sourceName)}」から${res.boards.length}件を取り込みました</span>`;
+          showToast('取り込みました'); document.getElementById('board-import-sheet-url').value=''; renderBoardGrid();
+        } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ 保存失敗: ' + _esc(res2.error||'') + '</span>';
+      }).withFailureHandler(() => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>'; })
+        .apiSaveBoards(DATA.boards);
+    } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + _esc((res&&res.error)||'取り込み失敗') + '</span>';
+  }).withFailureHandler(() => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>'; })
+    .apiImportBoardsFromSheet({ sheetUrl: url });
+}
+
+// ── 初期データ投入（部品マスタxlsx・機種別ハードウェア構成表PDFから抽出した実データ） ──
+function seedRealData(){
+  const statusEl = document.getElementById('seed-status');
+  statusEl.textContent = '⏳ 投入中...';
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) {
+      statusEl.innerHTML = `<span style="color:var(--success);">✅ 機種${res.models}件・基板${res.boards}件を投入しました</span>`;
+      showToast('初期データを投入しました');
+      loadAll();
+    } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + _esc((res&&res.error)||'失敗') + '</span>';
+  }).withFailureHandler(err => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー: ' + _esc(err.message||err) + '</span>'; })
+    .apiSeedRealData();
+}
+
 // ════════════════════════════════════════════════════════════
 // 機種図鑑
 // ════════════════════════════════════════════════════════════
@@ -181,17 +235,24 @@ function _populateModelFilters(){
   _fillDatalist('model-brand-list', _uniqSorted(list.map(m=>m.brand)));
   _fillDatalist('model-type-list', _uniqSorted(list.map(m=>m.type)));
 }
+function _gameTypeBadge(gt){
+  if (gt === 'パチンコ') return '<span class="badge badge-danger">パチンコ</span>';
+  if (gt === '回胴') return '<span class="badge badge-info">回胴（スロット）</span>';
+  return '';
+}
 function renderModelGrid(){
   _populateModelFilters();
   const kw = (document.getElementById('model-search').value||'').toLowerCase();
   const fb = document.getElementById('model-filter-brand').value;
   const ft = document.getElementById('model-filter-type').value;
+  const fg = document.getElementById('model-filter-gametype').value;
   const list = Object.values(DATA.models).filter(m => {
     const txt = [m.code,m.name,m.brand,m.type,m.features,m.summary].join(' ').toLowerCase();
     const mk = !kw || txt.includes(kw);
     const mb = !fb || m.brand === fb;
     const mt = !ft || m.type === ft;
-    return mk && mb && mt;
+    const mg = !fg || m.gameType === fg;
+    return mk && mb && mt && mg;
   }).sort((a,b)=> String(a.code).localeCompare(String(b.code)));
   const grid = document.getElementById('model-grid');
   if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する機種がありません</div>`; return; }
@@ -204,7 +265,8 @@ function renderModelGrid(){
         <div class="zukan-card-title">${_esc(m.name || m.code)}</div>
         <div class="zukan-card-sub">${_esc(m.code)}${m.brand?' ・ '+_esc(m.brand):''}</div>
         <div class="zukan-card-tags">
-          ${m.type?`<span class="badge badge-info">${_esc(m.type)}</span>`:''}
+          ${_gameTypeBadge(m.gameType)}
+          ${m.type?`<span class="badge badge-default">${_esc(m.type)}</span>`:''}
           ${boards.length?`<span class="badge badge-default">基板${boards.length}種</span>`:''}
         </div>
       </div>
@@ -215,6 +277,9 @@ function openModelDetail(code){
   const m = DATA.models[code]; if(!m) return;
   document.getElementById('model-detail-title').textContent = '🏭 ' + (m.name || m.code);
   const boardRows = [['M基板',m.m],['D基板',m.d],['DE基板',m.de],['E基板',m.e],['C基板',m.c],['S基板',m.s]].filter(([,v])=>v);
+  const _boardCell = v => DATA.boards[v]
+    ? `<a href="#" onclick="event.preventDefault();closeModal('model-detail-modal');openBoardDetail('${_esc(v).replace(/'/g,"\\'")}')">${_esc(v)} 🔗</a>`
+    : _esc(v);
   const manuals = _csv(m.manualIds).map(id => DATA.manuals[id]).filter(Boolean);
   document.getElementById('model-detail-body').innerHTML = `
     ${m.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(m.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
@@ -222,8 +287,9 @@ function openModelDetail(code){
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">機種コード</td><td style="padding:6px 10px;font-weight:600;">${_esc(m.code)}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">種類</td><td style="padding:6px 10px;">${_esc(m.type)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">ブランド</td><td style="padding:6px 10px;">${_esc(m.brand)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">遊技機タイプ</td><td style="padding:6px 10px;">${_gameTypeBadge(m.gameType)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">発売日</td><td style="padding:6px 10px;">${_esc(m.date)||'—'}</td></tr>
-      ${boardRows.map(([k,v])=>`<tr><td style="padding:6px 10px;color:var(--text-sub);">${k}</td><td style="padding:6px 10px;">${_esc(v)}</td></tr>`).join('')}
+      ${boardRows.map(([k,v])=>`<tr><td style="padding:6px 10px;color:var(--text-sub);">${k}</td><td style="padding:6px 10px;">${_boardCell(v)}</td></tr>`).join('')}
     </table>
     ${m.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(m.summary)}</p>`:''}
     ${m.features?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">✨ 特徴・ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(m.features)}</div></div>`:''}
@@ -256,6 +322,7 @@ function openModelEditModal(code){
   const sv = (id,v)=>{ document.getElementById(id).value = v||''; };
   sv('model-code', m?m.code:''); sv('model-name', m?m.name:''); sv('model-type', m?m.type:'');
   sv('model-brand', m?m.brand:''); sv('model-date', m?m.date:'');
+  document.getElementById('model-game-type').value = m?(m.gameType||''):'';
   sv('model-m', m?m.m:''); sv('model-d', m?m.d:''); sv('model-de', m?m.de:'');
   sv('model-e', m?m.e:''); sv('model-c', m?m.c:''); sv('model-s', m?m.s:'');
   sv('model-photo-url', m?m.photoUrl:''); sv('model-summary', m?m.summary:'');
@@ -272,7 +339,8 @@ function saveModel(){
   const origCode = document.getElementById('model-edit-modal').dataset.origCode;
   if (origCode && origCode !== code) delete DATA.models[origCode];
   DATA.models[code] = {
-    code, name:v('model-name'), type:v('model-type'), brand:v('model-brand'), date:v('model-date'),
+    code, name:v('model-name'), type:v('model-type'), brand:v('model-brand'),
+    gameType: document.getElementById('model-game-type').value, date:v('model-date'),
     m:v('model-m'), d:v('model-d'), de:v('model-de'), e:v('model-e'), c:v('model-c'), s:v('model-s'),
     photoUrl:v('model-photo-url'), summary:v('model-summary'), features:v('model-features'),
     studyNote:v('model-study-note'), manualIds:v('model-manual-ids'), note:v('model-note'), updatedAt:_now()
@@ -314,10 +382,11 @@ function renderBoardGrid(){
       <div class="zukan-card-photo">${photo}</div>
       <div class="zukan-card-body">
         <div class="zukan-card-title">${_esc(b.name || b.id)}</div>
-        <div class="zukan-card-sub">${_esc(b.id)}${b.version?' ・ v'+_esc(b.version):''}</div>
+        <div class="zukan-card-sub">${_esc(b.id)}${b.brand?' ・ '+_esc(b.brand):''}${b.version?' ・ v'+_esc(b.version):''}</div>
         <div class="zukan-card-tags">
           ${b.category?`<span class="badge badge-info">${_esc(b.category)}</span>`:''}
           ${b.status?`<span class="badge ${statusColor[b.status]||'badge-default'}">${_esc(b.status)}</span>`:''}
+          ${b.relatedModels?`<span class="badge badge-default">採用機種${_csv(b.relatedModels).length}件</span>`:''}
         </div>
       </div>
     </div>`;
@@ -331,9 +400,17 @@ function openBoardDetail(id){
     <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">基板ID</td><td style="padding:6px 10px;font-weight:600;">${_esc(b.id)}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">分類</td><td style="padding:6px 10px;">${_esc(b.category)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">ブランド</td><td style="padding:6px 10px;">${_esc(b.brand)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">バージョン</td><td style="padding:6px 10px;">${_esc(b.version)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">ステータス</td><td style="padding:6px 10px;">${_esc(b.status)||'—'}</td></tr>
-      <tr><td style="padding:6px 10px;color:var(--text-sub);">関連機種</td><td style="padding:6px 10px;">${_esc(b.relatedModels)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">採用機種（この基板を使う機種）</td><td style="padding:6px 10px;">${
+        _csv(b.relatedModels).length
+          ? _csv(b.relatedModels).map(code => DATA.models[code]
+              ? `<a href="#" onclick="event.preventDefault();closeModal('board-detail-modal');openModelDetail('${_esc(code).replace(/'/g,"\\'")}')" class="badge badge-default" style="text-decoration:none;margin:1px 3px 1px 0;display:inline-block;">${_esc(code)}</a>`
+              : `<span class="badge badge-default" style="margin:1px 3px 1px 0;display:inline-block;">${_esc(code)}</span>`
+            ).join('')
+          : '—'
+      }</td></tr>
     </table>
     ${b.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(b.summary)}</p>`:''}
     ${b.mainParts?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">🔧 主要部品</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.mainParts)}</div></div>`:''}
@@ -364,7 +441,7 @@ function openBoardEditModal(id){
   document.getElementById('board-edit-title').textContent = b ? '📝 基板を編集' : '📝 基板を登録';
   const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
   sv('board-id', b?b.id:''); sv('board-name', b?b.name:''); sv('board-category', b?b.category:'');
-  sv('board-version', b?b.version:'');
+  sv('board-brand', b?b.brand:''); sv('board-version', b?b.version:'');
   document.getElementById('board-status').value = b?(b.status||'設計中'):'設計中';
   sv('board-photo-url', b?b.photoUrl:''); sv('board-summary', b?b.summary:'');
   sv('board-main-parts', b?b.mainParts:''); sv('board-study-point', b?b.studyPoint:'');
@@ -379,7 +456,7 @@ function saveBoard(){
   const origId = document.getElementById('board-edit-modal').dataset.origId;
   if (origId && origId !== id) delete DATA.boards[origId];
   DATA.boards[id] = {
-    id, name:v('board-name'), category:v('board-category'), version:v('board-version'),
+    id, name:v('board-name'), category:v('board-category'), brand:v('board-brand'), version:v('board-version'),
     status:document.getElementById('board-status').value, photoUrl:v('board-photo-url'),
     summary:v('board-summary'), mainParts:v('board-main-parts'), studyPoint:v('board-study-point'),
     relatedModels:v('board-related-models'), note:v('board-note'), updatedAt:_now()

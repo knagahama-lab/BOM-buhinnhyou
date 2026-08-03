@@ -48,10 +48,27 @@
       <div class="page-heading">
         <div><h2>🏭 機種図鑑</h2><p>自社製品（機種）の座学用ナレッジベース。写真・特徴・基板構成をまとめて確認できます。</p></div>
       </div>
+      <div class="template-banner">
+        <div class="template-banner-icon">🧩</div>
+        <div class="template-banner-body">
+          <div class="template-banner-title">機種・基板構成は雛形から一括登録できます</div>
+          <div class="template-banner-sub">機種別ハードウェア構成一覧表などから雛形へ書き写し、スプレッドシートのURLを貼り付けて一括で取り込めます。</div>
+        </div>
+        <div class="template-banner-actions">
+          <button class="btn btn-outline btn-sm" onclick="downloadTemplate('model')">⬇ Excel雛形をダウンロード</button>
+          <button class="btn btn-primary btn-sm" onclick="copyTemplateAndOpen('model')">📝 雛形をコピーして編集</button>
+        </div>
+      </div>
+      <div class="import-box" style="margin-bottom:16px;">
+        <input type="text" id="model-import-sheet-url" placeholder="記入済みスプレッドシート（雛形のコピー）のURLを貼り付け">
+        <button class="btn btn-outline btn-sm" onclick="importModelsFromSheet()">📥 一括取り込む</button>
+      </div>
+      <div id="model-import-status" style="font-size:11px;color:var(--text-sub);margin:-10px 0 14px;"></div>
       <div class="filter-bar">
         <div class="search-box"><input type="text" id="model-search" placeholder="機種名・機種コード・ブランド・特徴で検索..." oninput="renderModelGrid()"></div>
         <select id="model-filter-brand" onchange="renderModelGrid()"><option value="">すべてのブランド</option></select>
         <select id="model-filter-type" onchange="renderModelGrid()"><option value="">すべての種類</option></select>
+        <select id="model-filter-gametype" onchange="renderModelGrid()"><option value="">パチンコ／回胴</option><option value="パチンコ">パチンコ</option><option value="回胴">回胴（スロット）</option></select>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('model-search').value='';renderModelGrid()">クリア</button>
       </div>
       <div id="model-grid" class="zukan-grid"></div>
@@ -62,6 +79,22 @@
       <div class="page-heading">
         <div><h2>🔌 基板図鑑</h2><p>基板単位の仕様・機能・学習ポイントをまとめて確認できます。</p></div>
       </div>
+      <div class="template-banner">
+        <div class="template-banner-icon">🧩</div>
+        <div class="template-banner-body">
+          <div class="template-banner-title">基板マスタは雛形から一括登録できます</div>
+          <div class="template-banner-sub">部品マスタ表などから雛形へ書き写し、スプレッドシートのURLを貼り付けて一括で取り込めます。</div>
+        </div>
+        <div class="template-banner-actions">
+          <button class="btn btn-outline btn-sm" onclick="downloadTemplate('board')">⬇ Excel雛形をダウンロード</button>
+          <button class="btn btn-primary btn-sm" onclick="copyTemplateAndOpen('board')">📝 雛形をコピーして編集</button>
+        </div>
+      </div>
+      <div class="import-box" style="margin-bottom:16px;">
+        <input type="text" id="board-import-sheet-url" placeholder="記入済みスプレッドシート（雛形のコピー）のURLを貼り付け">
+        <button class="btn btn-outline btn-sm" onclick="importBoardsFromSheet()">📥 一括取り込む</button>
+      </div>
+      <div id="board-import-status" style="font-size:11px;color:var(--text-sub);margin:-10px 0 14px;"></div>
       <div class="filter-bar">
         <div class="search-box"><input type="text" id="board-search" placeholder="基板名・基板ID・分類で検索..." oninput="renderBoardGrid()"></div>
         <select id="board-filter-category" onchange="renderBoardGrid()"><option value="">すべての分類</option></select>
@@ -165,6 +198,16 @@
           アップロードしたファイルは Google Drive の「図鑑・マニュアル_アップロード」フォルダに自動保存されます。
         </p>
       </div>
+      <div class="table-wrap" style="padding:20px;margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:8px;">🌱 初期データの投入</h3>
+        <p style="font-size:12.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.8;">
+          部品マスタ表（xlsx）と機種別ハードウェア構成一覧表（PDF）から読み取れた分の機種・基板データを投入します。<br>
+          既存データは削除せず、同じコード／IDのみ追加・上書きします（複数回実行しても安全です）。<br>
+          ※構成表の一部（列の判読が不明瞭だった箇所や、未確認の残りページ）は含まれていません。必要に応じて上記の一括取り込みで追記してください。
+        </p>
+        <button class="btn btn-primary" onclick="seedRealData()">🌱 初期データを投入する</button>
+        <div id="seed-status" style="font-size:12px;color:var(--text-sub);margin-top:8px;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -193,7 +236,14 @@
       </div>
       <div class="form-row">
         <div class="form-field"><label>種類</label><input type="text" id="model-type" list="model-type-list" placeholder="例: 甲種／乙種など"></div>
-        <div class="form-field"><label>ブランド</label><input type="text" id="model-brand" list="model-brand-list" placeholder="例: ○○社"></div>
+        <div class="form-field"><label>ブランド</label><input type="text" id="model-brand" list="model-brand-list" placeholder="例: PF40／SF20など"></div>
+      </div>
+      <div class="form-field"><label>遊技機タイプ</label>
+        <select id="model-game-type">
+          <option value="">未設定</option>
+          <option value="パチンコ">パチンコ</option>
+          <option value="回胴">回胴（スロット）</option>
+        </select>
       </div>
       <datalist id="model-type-list"></datalist>
       <datalist id="model-brand-list"></datalist>
@@ -253,9 +303,10 @@
         <div class="form-field"><label>基板名</label><input type="text" id="board-name"></div>
       </div>
       <div class="form-row">
-        <div class="form-field"><label>分類</label><input type="text" id="board-category" list="board-category-list" placeholder="例: M基板／D基板 など"></div>
-        <div class="form-field"><label>バージョン</label><input type="text" id="board-version"></div>
+        <div class="form-field"><label>分類</label><input type="text" id="board-category" list="board-category-list" placeholder="例: 仕掛／回路設計／製品 など"></div>
+        <div class="form-field"><label>ブランド</label><input type="text" id="board-brand" placeholder="例: FF+／FJ+ など"></div>
       </div>
+      <div class="form-field"><label>バージョン</label><input type="text" id="board-version"></div>
       <datalist id="board-category-list"></datalist>
       <div class="form-field"><label>ステータス</label>
         <select id="board-status">
