@@ -1,0 +1,506 @@
+<script>
+// ============================================================
+// js.html — 製品図鑑・マニュアル管理 フロントエンド
+// 見積管理システム(mitumorikannri-VR3)と同系統のサイドバー/カードUIパターンを踏襲
+// ============================================================
+
+const MENU = [
+  { id:'model',    icon:'🏭', label:'機種図鑑',     section:'製品図鑑' },
+  { id:'board',    icon:'🔌', label:'基板図鑑',     section:'製品図鑑' },
+  { id:'manual',   icon:'📚', label:'マニュアル管理', section:'ナレッジ' },
+  { id:'flow',     icon:'🔄', label:'フロー管理',   section:'ナレッジ' },
+  { id:'settings', icon:'⚙️', label:'設定・使い方', section:'その他' }
+];
+const PAGE_TITLES = { model:'機種図鑑', board:'基板図鑑', manual:'マニュアル管理', flow:'フロー管理', settings:'設定・使い方' };
+const TOPBAR_ACTIONS = {
+  model:    '<button class="topbar-btn primary" onclick="openModelEditModal(null)">＋ 機種を登録</button>',
+  board:    '<button class="topbar-btn primary" onclick="openBoardEditModal(null)">＋ 基板を登録</button>',
+  manual:   '<button class="topbar-btn primary" onclick="openManualEditModal(null)">＋ マニュアルを登録</button>',
+  flow:     '<button class="topbar-btn primary" onclick="openFlowEditModal(null)">＋ フローを登録</button>',
+  settings: ''
+};
+
+let DATA = { models:{}, boards:{}, manuals:{}, flows:{} };
+let _currentPage = 'model';
+
+window.addEventListener('load', () => {
+  renderSidebar();
+  showPage('model');
+  loadAll();
+});
+
+// ── ユーティリティ ──
+function _esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function _genId(prefix){ return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,5).toUpperCase(); }
+function _now(){ return new Date().toISOString(); }
+function showToast(msg, isError=false){
+  const t=document.getElementById('toast'); if(!t) return;
+  t.textContent=(isError?'✗ ':'✓ ')+msg; t.style.background=isError?'#dc2626':'#1e293b';
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3500);
+}
+function openModal(id){ const el=document.getElementById(id); if(el) el.classList.add('open'); }
+function closeModal(id){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+function _csv(str){ return String(str||'').split(',').map(s=>s.trim()).filter(Boolean); }
+function _uniqSorted(arr){ return Array.from(new Set(arr.filter(Boolean))).sort(); }
+function _fillSelect(selectEl, values, placeholder){
+  if(!selectEl) return;
+  const cur = selectEl.value;
+  selectEl.innerHTML = `<option value="">${placeholder}</option>` + values.map(v=>`<option value="${_esc(v)}">${_esc(v)}</option>`).join('');
+  selectEl.value = cur;
+}
+function _fillDatalist(id, values){
+  const dl = document.getElementById(id); if(!dl) return;
+  dl.innerHTML = values.map(v=>`<option value="${_esc(v)}">`).join('');
+}
+
+// ── サイドバー / ページ切替 ──
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('collapsed'); }
+function renderSidebar(){
+  const container = document.getElementById('sidebar-nav-container'); if(!container) return;
+  const sections = {};
+  MENU.forEach(item=>{ if(!sections[item.section]) sections[item.section]=[]; sections[item.section].push(item); });
+  let html='';
+  Object.keys(sections).forEach(section=>{
+    html += `<div class="sidebar-section-label">${section}</div>`;
+    sections[section].forEach(item=>{
+      html += `<div class="nav-item" data-id="${item.id}" onclick="showPage('${item.id}')"><span class="nav-item-icon">${item.icon}</span><span class="nav-item-label">${item.label}</span></div>`;
+    });
+  });
+  container.innerHTML = html;
+}
+function showPage(name){
+  _currentPage = name;
+  document.querySelectorAll('.nav-item[data-id]').forEach(t=>{ t.classList.toggle('active', t.dataset.id===name); });
+  const titleEl = document.getElementById('topbar-page-title'); if(titleEl) titleEl.textContent = PAGE_TITLES[name] || name;
+  const actionsEl = document.getElementById('topbar-actions'); if(actionsEl) actionsEl.innerHTML = TOPBAR_ACTIONS[name] || '';
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const target = document.getElementById('page-'+name); if(target) target.classList.add('active');
+  document.getElementById('content').scrollTop = 0;
+}
+
+// ── データ読み込み ──
+function loadAll(){
+  google.script.run.withSuccessHandler(res => {
+    if (!res || !res.success) { showToast('データ取得に失敗しました: ' + (res&&res.error||''), true); return; }
+    DATA.models = res.models || {};
+    DATA.boards = res.boards || {};
+    DATA.manuals = res.manuals || {};
+    DATA.flows = res.flows || {};
+    renderModelGrid(); renderBoardGrid(); renderManualList(); renderFlowList();
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiLoadAll();
+}
+
+// ── ファイルアップロード共通処理 ──
+function uploadToField(inputEl, targetFieldId){
+  const f = inputEl.files[0]; if(!f) return;
+  const statusId = targetFieldId.replace('-url','-status');
+  const statusEl = document.getElementById(statusId);
+  if (statusEl) statusEl.textContent = '⏳ アップロード中...';
+  const reader = new FileReader();
+  reader.onload = e => {
+    const b64 = e.target.result.split(',')[1];
+    google.script.run.withSuccessHandler(res => {
+      if (res && res.success) {
+        document.getElementById(targetFieldId).value = res.url;
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--success);">✅ アップロード完了</span>';
+        showToast('アップロードしました');
+      } else {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + ((res&&res.error)||'失敗') + '</span>';
+      }
+    }).withFailureHandler(err => {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー</span>';
+    }).apiUploadFile({ base64Data: b64, fileName: f.name, mimeType: f.type });
+  };
+  reader.readAsDataURL(f);
+  inputEl.value = '';
+}
+
+// ════════════════════════════════════════════════════════════
+// 機種図鑑
+// ════════════════════════════════════════════════════════════
+function _populateModelFilters(){
+  const list = Object.values(DATA.models);
+  _fillSelect(document.getElementById('model-filter-brand'), _uniqSorted(list.map(m=>m.brand)), 'すべてのブランド');
+  _fillSelect(document.getElementById('model-filter-type'), _uniqSorted(list.map(m=>m.type)), 'すべての種類');
+  _fillDatalist('model-brand-list', _uniqSorted(list.map(m=>m.brand)));
+  _fillDatalist('model-type-list', _uniqSorted(list.map(m=>m.type)));
+}
+function renderModelGrid(){
+  _populateModelFilters();
+  const kw = (document.getElementById('model-search').value||'').toLowerCase();
+  const fb = document.getElementById('model-filter-brand').value;
+  const ft = document.getElementById('model-filter-type').value;
+  const list = Object.values(DATA.models).filter(m => {
+    const txt = [m.code,m.name,m.brand,m.type,m.features,m.summary].join(' ').toLowerCase();
+    const mk = !kw || txt.includes(kw);
+    const mb = !fb || m.brand === fb;
+    const mt = !ft || m.type === ft;
+    return mk && mb && mt;
+  }).sort((a,b)=> String(a.code).localeCompare(String(b.code)));
+  const grid = document.getElementById('model-grid');
+  if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する機種がありません</div>`; return; }
+  grid.innerHTML = list.map(m => {
+    const boards = ['m','d','de','e','c','s'].map(k=>m[k]).filter(Boolean);
+    const photo = m.photoUrl ? `<img src="${_esc(m.photoUrl)}" alt="">` : '🏭';
+    return `<div class="zukan-card" onclick="openModelDetail('${_esc(m.code).replace(/'/g,"\\'")}')">
+      <div class="zukan-card-photo">${photo}</div>
+      <div class="zukan-card-body">
+        <div class="zukan-card-title">${_esc(m.name || m.code)}</div>
+        <div class="zukan-card-sub">${_esc(m.code)}${m.brand?' ・ '+_esc(m.brand):''}</div>
+        <div class="zukan-card-tags">
+          ${m.type?`<span class="badge badge-info">${_esc(m.type)}</span>`:''}
+          ${boards.length?`<span class="badge badge-default">基板${boards.length}種</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openModelDetail(code){
+  const m = DATA.models[code]; if(!m) return;
+  document.getElementById('model-detail-title').textContent = '🏭 ' + (m.name || m.code);
+  const boardRows = [['M基板',m.m],['D基板',m.d],['DE基板',m.de],['E基板',m.e],['C基板',m.c],['S基板',m.s]].filter(([,v])=>v);
+  const manuals = _csv(m.manualIds).map(id => DATA.manuals[id]).filter(Boolean);
+  document.getElementById('model-detail-body').innerHTML = `
+    ${m.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(m.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
+      <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">機種コード</td><td style="padding:6px 10px;font-weight:600;">${_esc(m.code)}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">種類</td><td style="padding:6px 10px;">${_esc(m.type)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">ブランド</td><td style="padding:6px 10px;">${_esc(m.brand)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">発売日</td><td style="padding:6px 10px;">${_esc(m.date)||'—'}</td></tr>
+      ${boardRows.map(([k,v])=>`<tr><td style="padding:6px 10px;color:var(--text-sub);">${k}</td><td style="padding:6px 10px;">${_esc(v)}</td></tr>`).join('')}
+    </table>
+    ${m.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(m.summary)}</p>`:''}
+    ${m.features?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">✨ 特徴・ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(m.features)}</div></div>`:''}
+    ${m.studyNote?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📝 学習メモ</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(m.studyNote)}</div></div>`:''}
+    ${manuals.length?`<div><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📚 関連マニュアル</div>${manuals.map(mn=>`<a href="${_esc(mn.fileUrl)||'#'}" target="_blank" class="badge badge-default" style="margin:2px 4px 2px 0;text-decoration:none;">${_esc(mn.title)}</a>`).join('')}</div>`:''}
+    ${m.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(m.note)}</div>`:''}
+  `;
+  document.getElementById('model-detail-modal').dataset.code = code;
+  openModal('model-detail-modal');
+}
+function editModelFromDetail(){
+  const code = document.getElementById('model-detail-modal').dataset.code;
+  closeModal('model-detail-modal');
+  openModelEditModal(code);
+}
+function deleteModelFromDetail(){
+  const code = document.getElementById('model-detail-modal').dataset.code;
+  if (!confirm('この機種を図鑑から削除しますか？')) return;
+  delete DATA.models[code];
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('削除しました'); closeModal('model-detail-modal'); renderModelGrid(); }
+    else showToast('削除失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveModels(DATA.models);
+}
+function openModelEditModal(code){
+  _populateModelFilters();
+  const m = code ? DATA.models[code] : null;
+  document.getElementById('model-edit-title').textContent = m ? '📝 機種を編集' : '📝 機種を登録';
+  const sv = (id,v)=>{ document.getElementById(id).value = v||''; };
+  sv('model-code', m?m.code:''); sv('model-name', m?m.name:''); sv('model-type', m?m.type:'');
+  sv('model-brand', m?m.brand:''); sv('model-date', m?m.date:'');
+  sv('model-m', m?m.m:''); sv('model-d', m?m.d:''); sv('model-de', m?m.de:'');
+  sv('model-e', m?m.e:''); sv('model-c', m?m.c:''); sv('model-s', m?m.s:'');
+  sv('model-photo-url', m?m.photoUrl:''); sv('model-summary', m?m.summary:'');
+  sv('model-features', m?m.features:''); sv('model-study-note', m?m.studyNote:'');
+  sv('model-manual-ids', m?m.manualIds:''); sv('model-note', m?m.note:'');
+  document.getElementById('model-photo-status').textContent = '';
+  document.getElementById('model-edit-modal').dataset.origCode = code || '';
+  openModal('model-edit-modal');
+}
+function saveModel(){
+  const v = id => document.getElementById(id).value.trim();
+  const code = v('model-code');
+  if (!code) { showToast('機種コードは必須です', true); return; }
+  const origCode = document.getElementById('model-edit-modal').dataset.origCode;
+  if (origCode && origCode !== code) delete DATA.models[origCode];
+  DATA.models[code] = {
+    code, name:v('model-name'), type:v('model-type'), brand:v('model-brand'), date:v('model-date'),
+    m:v('model-m'), d:v('model-d'), de:v('model-de'), e:v('model-e'), c:v('model-c'), s:v('model-s'),
+    photoUrl:v('model-photo-url'), summary:v('model-summary'), features:v('model-features'),
+    studyNote:v('model-study-note'), manualIds:v('model-manual-ids'), note:v('model-note'), updatedAt:_now()
+  };
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('保存しました'); closeModal('model-edit-modal'); renderModelGrid(); }
+    else showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveModels(DATA.models);
+}
+
+// ════════════════════════════════════════════════════════════
+// 基板図鑑
+// ════════════════════════════════════════════════════════════
+function _populateBoardFilters(){
+  const list = Object.values(DATA.boards);
+  _fillSelect(document.getElementById('board-filter-category'), _uniqSorted(list.map(b=>b.category)), 'すべての分類');
+  _fillSelect(document.getElementById('board-filter-status'), _uniqSorted(list.map(b=>b.status)), 'すべてのステータス');
+  _fillDatalist('board-category-list', _uniqSorted(list.map(b=>b.category)));
+}
+function renderBoardGrid(){
+  _populateBoardFilters();
+  const kw = (document.getElementById('board-search').value||'').toLowerCase();
+  const fc = document.getElementById('board-filter-category').value;
+  const fs = document.getElementById('board-filter-status').value;
+  const list = Object.values(DATA.boards).filter(b => {
+    const txt = [b.id,b.name,b.category,b.summary,b.mainParts].join(' ').toLowerCase();
+    const mk = !kw || txt.includes(kw);
+    const mc = !fc || b.category === fc;
+    const ms = !fs || b.status === fs;
+    return mk && mc && ms;
+  }).sort((a,b)=> String(a.id).localeCompare(String(b.id)));
+  const grid = document.getElementById('board-grid');
+  if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する基板がありません</div>`; return; }
+  const statusColor = { '量産中':'badge-success', '設計中':'badge-warning', '生産終了':'badge-default' };
+  grid.innerHTML = list.map(b => {
+    const photo = b.photoUrl ? `<img src="${_esc(b.photoUrl)}" alt="">` : '🔌';
+    return `<div class="zukan-card" onclick="openBoardDetail('${_esc(b.id).replace(/'/g,"\\'")}')">
+      <div class="zukan-card-photo">${photo}</div>
+      <div class="zukan-card-body">
+        <div class="zukan-card-title">${_esc(b.name || b.id)}</div>
+        <div class="zukan-card-sub">${_esc(b.id)}${b.version?' ・ v'+_esc(b.version):''}</div>
+        <div class="zukan-card-tags">
+          ${b.category?`<span class="badge badge-info">${_esc(b.category)}</span>`:''}
+          ${b.status?`<span class="badge ${statusColor[b.status]||'badge-default'}">${_esc(b.status)}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openBoardDetail(id){
+  const b = DATA.boards[id]; if(!b) return;
+  document.getElementById('board-detail-title').textContent = '🔌 ' + (b.name || b.id);
+  document.getElementById('board-detail-body').innerHTML = `
+    ${b.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(b.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
+      <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">基板ID</td><td style="padding:6px 10px;font-weight:600;">${_esc(b.id)}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">分類</td><td style="padding:6px 10px;">${_esc(b.category)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">バージョン</td><td style="padding:6px 10px;">${_esc(b.version)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">ステータス</td><td style="padding:6px 10px;">${_esc(b.status)||'—'}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">関連機種</td><td style="padding:6px 10px;">${_esc(b.relatedModels)||'—'}</td></tr>
+    </table>
+    ${b.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(b.summary)}</p>`:''}
+    ${b.mainParts?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">🔧 主要部品</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.mainParts)}</div></div>`:''}
+    ${b.studyPoint?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📝 学習ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.studyPoint)}</div></div>`:''}
+    ${b.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(b.note)}</div>`:''}
+  `;
+  document.getElementById('board-detail-modal').dataset.id = id;
+  openModal('board-detail-modal');
+}
+function editBoardFromDetail(){
+  const id = document.getElementById('board-detail-modal').dataset.id;
+  closeModal('board-detail-modal');
+  openBoardEditModal(id);
+}
+function deleteBoardFromDetail(){
+  const id = document.getElementById('board-detail-modal').dataset.id;
+  if (!confirm('この基板を図鑑から削除しますか？')) return;
+  delete DATA.boards[id];
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('削除しました'); closeModal('board-detail-modal'); renderBoardGrid(); }
+    else showToast('削除失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveBoards(DATA.boards);
+}
+function openBoardEditModal(id){
+  _populateBoardFilters();
+  const b = id ? DATA.boards[id] : null;
+  document.getElementById('board-edit-title').textContent = b ? '📝 基板を編集' : '📝 基板を登録';
+  const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
+  sv('board-id', b?b.id:''); sv('board-name', b?b.name:''); sv('board-category', b?b.category:'');
+  sv('board-version', b?b.version:'');
+  document.getElementById('board-status').value = b?(b.status||'設計中'):'設計中';
+  sv('board-photo-url', b?b.photoUrl:''); sv('board-summary', b?b.summary:'');
+  sv('board-main-parts', b?b.mainParts:''); sv('board-study-point', b?b.studyPoint:'');
+  sv('board-related-models', b?b.relatedModels:''); sv('board-note', b?b.note:'');
+  document.getElementById('board-edit-modal').dataset.origId = id || '';
+  openModal('board-edit-modal');
+}
+function saveBoard(){
+  const v = id => document.getElementById(id).value.trim();
+  const id = v('board-id');
+  if (!id) { showToast('基板IDは必須です', true); return; }
+  const origId = document.getElementById('board-edit-modal').dataset.origId;
+  if (origId && origId !== id) delete DATA.boards[origId];
+  DATA.boards[id] = {
+    id, name:v('board-name'), category:v('board-category'), version:v('board-version'),
+    status:document.getElementById('board-status').value, photoUrl:v('board-photo-url'),
+    summary:v('board-summary'), mainParts:v('board-main-parts'), studyPoint:v('board-study-point'),
+    relatedModels:v('board-related-models'), note:v('board-note'), updatedAt:_now()
+  };
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('保存しました'); closeModal('board-edit-modal'); renderBoardGrid(); }
+    else showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveBoards(DATA.boards);
+}
+
+// ════════════════════════════════════════════════════════════
+// マニュアル管理
+// ════════════════════════════════════════════════════════════
+function _populateManualFilters(){
+  const list = Object.values(DATA.manuals);
+  _fillSelect(document.getElementById('manual-filter-category'), _uniqSorted(list.map(m=>m.category)), 'すべてのカテゴリ');
+  _fillDatalist('manual-category-list', _uniqSorted(list.map(m=>m.category)));
+}
+function renderManualList(){
+  _populateManualFilters();
+  const kw = (document.getElementById('manual-search').value||'').toLowerCase();
+  const fc = document.getElementById('manual-filter-category').value;
+  const list = Object.values(DATA.manuals).filter(m => {
+    const txt = [m.title,m.category,m.tags,m.targetSystem,m.summary].join(' ').toLowerCase();
+    const mk = !kw || txt.includes(kw);
+    const mc = !fc || m.category === fc;
+    return mk && mc;
+  }).sort((a,b)=> String(a.title).localeCompare(String(b.title)));
+  const el = document.getElementById('manual-list');
+  if (list.length === 0) { el.innerHTML = `<div class="zukan-empty"><div class="zukan-empty-icon">📭</div>該当するマニュアルがありません</div>`; return; }
+  el.innerHTML = list.map(m => `
+    <div class="kb-item">
+      <div class="kb-item-icon">📄</div>
+      <div class="kb-item-body">
+        <div class="kb-item-title">${_esc(m.title)}</div>
+        <div class="kb-item-meta">
+          ${m.category?`<span class="badge badge-info">${_esc(m.category)}</span>`:''}
+          ${m.targetSystem?` <span style="margin-left:4px;">🔗 ${_esc(m.targetSystem)}</span>`:''}
+          ${m.tags?` ・ 🏷 ${_esc(m.tags)}`:''}
+        </div>
+        ${m.summary?`<div class="kb-item-summary">${_esc(m.summary)}</div>`:''}
+      </div>
+      <div class="kb-item-actions">
+        ${m.fileUrl?`<a class="btn btn-outline btn-sm" href="${_esc(m.fileUrl)}" target="_blank">📄 開く</a>`:''}
+        <button class="btn btn-outline btn-sm" onclick="openManualEditModal('${_esc(m.id).replace(/'/g,"\\'")}')">✏️ 編集</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteManual('${_esc(m.id).replace(/'/g,"\\'")}')">🗑</button>
+      </div>
+    </div>`).join('');
+}
+function openManualEditModal(id){
+  _populateManualFilters();
+  const m = id ? DATA.manuals[id] : null;
+  document.getElementById('manual-edit-title').textContent = m ? '📝 マニュアルを編集' : '📝 マニュアルを登録';
+  const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
+  sv('manual-id', id||''); sv('manual-title', m?m.title:''); sv('manual-category', m?m.category:'');
+  sv('manual-target-system', m?m.targetSystem:''); sv('manual-file-url', m?m.fileUrl:'');
+  sv('manual-summary', m?m.summary:''); sv('manual-tags', m?m.tags:'');
+  document.getElementById('manual-file-status').textContent = '';
+  openModal('manual-edit-modal');
+}
+function saveManual(){
+  const v = id => document.getElementById(id).value.trim();
+  const title = v('manual-title');
+  if (!title) { showToast('タイトルは必須です', true); return; }
+  const id = v('manual-id') || _genId('MN');
+  DATA.manuals[id] = {
+    id, title, category:v('manual-category'), targetSystem:v('manual-target-system'),
+    fileUrl:v('manual-file-url'), summary:v('manual-summary'), tags:v('manual-tags'),
+    updatedBy: (typeof CURRENT_USER_EMAIL!=='undefined'?CURRENT_USER_EMAIL:''), updatedAt:_now()
+  };
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('保存しました'); closeModal('manual-edit-modal'); renderManualList(); }
+    else showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveManuals(DATA.manuals);
+}
+function deleteManual(id){
+  if (!confirm('このマニュアルを削除しますか？')) return;
+  delete DATA.manuals[id];
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('削除しました'); renderManualList(); }
+    else showToast('削除失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveManuals(DATA.manuals);
+}
+
+// ════════════════════════════════════════════════════════════
+// フロー管理
+// ════════════════════════════════════════════════════════════
+function _populateFlowFilters(){
+  const list = Object.values(DATA.flows);
+  _fillSelect(document.getElementById('flow-filter-category'), _uniqSorted(list.map(f=>f.category)), 'すべてのカテゴリ');
+  _fillDatalist('flow-category-list', _uniqSorted(list.map(f=>f.category)));
+}
+function renderFlowList(){
+  _populateFlowFilters();
+  const kw = (document.getElementById('flow-search').value||'').toLowerCase();
+  const fc = document.getElementById('flow-filter-category').value;
+  const list = Object.values(DATA.flows).filter(f => {
+    const txt = [f.title,f.category,f.summary].join(' ').toLowerCase();
+    const mk = !kw || txt.includes(kw);
+    const mc = !fc || f.category === fc;
+    return mk && mc;
+  }).sort((a,b)=> String(a.title).localeCompare(String(b.title)));
+  const el = document.getElementById('flow-list');
+  if (list.length === 0) { el.innerHTML = `<div class="zukan-empty"><div class="zukan-empty-icon">📭</div>該当するフローがありません</div>`; return; }
+  el.innerHTML = list.map(f => {
+    const stepCount = _csv(f.steps.replace(/\n/g,',')).length;
+    return `<div class="kb-item" style="cursor:pointer;" onclick="openFlowDetail('${_esc(f.id).replace(/'/g,"\\'")}')">
+      <div class="kb-item-icon">🔄</div>
+      <div class="kb-item-body">
+        <div class="kb-item-title">${_esc(f.title)}</div>
+        <div class="kb-item-meta">
+          ${f.category?`<span class="badge badge-info">${_esc(f.category)}</span>`:''}
+          ${f.steps?` ・ ${stepCount}ステップ`:''}
+        </div>
+        ${f.summary?`<div class="kb-item-summary">${_esc(f.summary)}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+function openFlowDetail(id){
+  const f = DATA.flows[id]; if(!f) return;
+  document.getElementById('flow-detail-title').textContent = '🔄 ' + f.title;
+  const steps = String(f.steps||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const manuals = _csv(f.manualIds).map(mid => DATA.manuals[mid]).filter(Boolean);
+  document.getElementById('flow-detail-body').innerHTML = `
+    ${f.category?`<span class="badge badge-info" style="margin-bottom:10px;">${_esc(f.category)}</span>`:''}
+    ${f.summary?`<p style="font-size:12.5px;margin:10px 0;white-space:pre-wrap;">${_esc(f.summary)}</p>`:''}
+    ${steps.length?`<ol style="padding-left:20px;font-size:12.5px;line-height:2;">${steps.map(s=>`<li>${_esc(s)}</li>`).join('')}</ol>`:''}
+    ${f.diagramUrl?`<div style="margin-top:12px;"><a class="btn btn-outline btn-sm" href="${_esc(f.diagramUrl)}" target="_blank">🖼 図解を開く</a></div>`:''}
+    ${manuals.length?`<div style="margin-top:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📚 関連マニュアル</div>${manuals.map(mn=>`<a href="${_esc(mn.fileUrl)||'#'}" target="_blank" class="badge badge-default" style="margin:2px 4px 2px 0;text-decoration:none;">${_esc(mn.title)}</a>`).join('')}</div>`:''}
+    ${f.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(f.note)}</div>`:''}
+  `;
+  document.getElementById('flow-detail-modal').dataset.id = id;
+  openModal('flow-detail-modal');
+}
+function editFlowFromDetail(){
+  const id = document.getElementById('flow-detail-modal').dataset.id;
+  closeModal('flow-detail-modal');
+  openFlowEditModal(id);
+}
+function deleteFlowFromDetail(){
+  const id = document.getElementById('flow-detail-modal').dataset.id;
+  if (!confirm('このフローを削除しますか？')) return;
+  delete DATA.flows[id];
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('削除しました'); closeModal('flow-detail-modal'); renderFlowList(); }
+    else showToast('削除失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveFlows(DATA.flows);
+}
+function openFlowEditModal(id){
+  _populateFlowFilters();
+  const f = id ? DATA.flows[id] : null;
+  document.getElementById('flow-edit-title').textContent = f ? '📝 フローを編集' : '📝 フローを登録';
+  const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
+  sv('flow-id', id||''); sv('flow-title', f?f.title:''); sv('flow-category', f?f.category:'');
+  sv('flow-summary', f?f.summary:''); sv('flow-steps', f?f.steps:'');
+  sv('flow-diagram-url', f?f.diagramUrl:''); sv('flow-manual-ids', f?f.manualIds:''); sv('flow-note', f?f.note:'');
+  openModal('flow-edit-modal');
+}
+function saveFlow(){
+  const v = id => document.getElementById(id).value.trim();
+  const title = v('flow-title');
+  if (!title) { showToast('タイトルは必須です', true); return; }
+  const id = v('flow-id') || _genId('FL');
+  DATA.flows[id] = {
+    id, title, category:v('flow-category'), summary:v('flow-summary'), steps:v('flow-steps'),
+    diagramUrl:v('flow-diagram-url'), manualIds:v('flow-manual-ids'), note:v('flow-note'), updatedAt:_now()
+  };
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) { showToast('保存しました'); closeModal('flow-edit-modal'); renderFlowList(); }
+    else showToast('保存失敗: ' + (res.error||''), true);
+  }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
+    .apiSaveFlows(DATA.flows);
+}
+</script>

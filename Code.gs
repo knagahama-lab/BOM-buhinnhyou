@@ -1,21 +1,16 @@
 /**
- * BOM Pro — GAS バックエンド
+ * 製品図鑑・マニュアル管理 — GAS バックエンド
  * スプレッドシートをDBとして使用
  * 全データを1回のAPIコールで取得・保存するシンプル設計
+ * （旧「BOM Pro」部品表管理システムを土台に、部品BOM関連機能を廃止して作り替え）
  */
 
 // ── シート名定数 ──
 var S = {
-  PARTS:    '部品マスタ',
-  BOM:      'BOM',
-  MACHINES: '機種マスタ',
-  BOARDS:   '基板マスタ',
-  STOCK:    '在庫',
-  CHANGELOG:'変更履歴',
-  SSLINKS:  'SS連携設定',
-  PRICE_H:  '価格履歴',
-  META:     'メタ',
-  SUPPLIERS:'サプライヤマスタ'
+  MODELS:  '機種図鑑',
+  BOARDS:  '基板図鑑',
+  MANUALS: 'マニュアル',
+  FLOWS:   'フロー'
 };
 
 // ── プロパティ ──
@@ -30,7 +25,7 @@ function doGet() {
     var tmpl = HtmlService.createTemplateFromFile('Index');
     tmpl.userEmail = userEmail;
     return tmpl.evaluate()
-      .setTitle('BOM Pro — パチンコ基板部品表管理')
+      .setTitle('製品図鑑・マニュアル管理')
       .addMetaTag('viewport','width=device-width,initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch(e) {
@@ -40,7 +35,7 @@ function doGet() {
       '<p style="margin-top:12px;color:#52525b;">' + e.message + '</p>' +
       '<hr style="margin:20px 0;border:none;border-top:1px solid #e2e2e5;"/>' +
       '<p style="font-size:13px;color:#a1a1aa;line-height:1.8;">確認事項：<br>' +
-      '① GAS「プロジェクトの設定」→「スクリプトプロパティ」に <b>BOARD_SS_ID</b> を設定する<br>' +
+      '① GAS「プロジェクトの設定」→「スクリプトプロパティ」に <b>BOARD_SS_ID</b>（連携するスプレッドシートのID）を設定する<br>' +
       '② 再デプロイ（新バージョン）する</p></body>'
     ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
@@ -51,6 +46,7 @@ function include(filename) {
 }
 
 // ── スプレッドシート取得 ──
+// プロパティ名は旧システム（BOM Pro）から継続利用（既存デプロイ環境の設定を活かすため）
 function _ss() {
   var id = getSetting('BOARD_SS_ID');
   if (!id) throw new Error('スクリプトプロパティ BOARD_SS_ID が未設定です');
@@ -95,15 +91,10 @@ function _write(name, headers, rows) {
 
 // ── ヘッダー定義 ──
 var H = {
-  PARTS:    ['部品コード','部品名','メーカー名','公表単価','仕入先','メイン商社','生産拠点','廃番フラグ','RoHS対応','認定部品','備考','更新日時'],
-  BOM:      ['基板ID','部品コード','使用数量','単位','レベル','親ID','種別','備考'],
-  MACHINES: ['機種コード','機種名','種類','ブランド','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','備考','更新日時'],
-  BOARDS:   ['基板ID','基板名','基板分類','バージョン','ステータス','作成日','備考','更新日時'],
-  STOCK:    ['部品コード','在庫数','安全在庫','備考','更新日時'],
-  CHANGELOG:['日時','担当者','ECN番号','対象','変更種別','変更前','変更後','備考'],
-  SSLINKS:  ['名前','SSID','シート名','種別','備考'],
-  PRICE_H:  ['日時','部品コード','旧単価','新単価','変化率'],
-  SUPPLIERS:['企業コード','企業名','区分','主要生産拠点','担当者','連絡先','備考','更新日時']
+  MODELS:  ['機種コード','機種名','種類','ブランド','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
+  BOARDS:  ['基板ID','基板名','分類','バージョン','ステータス','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
+  MANUALS: ['マニュアルID','タイトル','カテゴリ','対象システム','ファイルURL','概要','タグ','更新者','更新日時'],
+  FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時']
 };
 
 // ══════════════════════════════════════════════════
@@ -111,258 +102,166 @@ var H = {
 // ══════════════════════════════════════════════════
 function apiLoadAll() {
   return _wrap(function() {
-    var parts = {}, bom = {}, machines = {}, boards = {}, stock = {}, suppliers = {};
+    var models = {}, boards = {}, manuals = {}, flows = {};
 
-    _read(S.SUPPLIERS, H.SUPPLIERS).forEach(function(r) {
-      if (r['企業コード']) suppliers[r['企業コード']] = { code:String(r['企業コード']), name:String(r['企業名']||''), type:String(r['区分']||'商社'), base:String(r['主要生産拠点']||''), pic:String(r['担当者']||''), contact:String(r['連絡先']||''), note:String(r['備考']||''), updatedAt:String(r['更新日時']||'') };
-    });
-
-    _read(S.PARTS, H.PARTS).forEach(function(r) {
-      if (r['部品コード']) parts[r['部品コード']] = {
-        code: String(r['部品コード']),
-        name: String(r['部品名'] || ''),
-        maker: String(r['メーカー名'] || ''),
-        price: String(r['公表単価'] || ''),
-        supplier: String(r['仕入先'] || ''),
-        mainSupplier: String(r['メイン商社'] || ''),
-        base: String(r['生産拠点'] || ''),
-        eol: String(r['廃番フラグ'] || '0'),
-        rohs: String(r['RoHS対応'] || '0'),
-        certified: String(r['認定部品'] || '0'),
+    _read(S.MODELS, H.MODELS).forEach(function(r) {
+      if (r['機種コード']) models[r['機種コード']] = {
+        code: String(r['機種コード']),
+        name: String(r['機種名'] || ''),
+        type: String(r['種類'] || ''),
+        brand: String(r['ブランド'] || ''),
+        date: String(r['発売日'] || ''),
+        m:  String(r['M基板'] || ''),
+        d:  String(r['D基板'] || ''),
+        de: String(r['DE基板'] || ''),
+        e:  String(r['E基板'] || ''),
+        c:  String(r['C基板'] || ''),
+        s:  String(r['S基板'] || ''),
+        photoUrl: String(r['写真URL'] || ''),
+        summary: String(r['概要'] || ''),
+        features: String(r['特徴・ポイント'] || ''),
+        studyNote: String(r['学習メモ'] || ''),
+        manualIds: String(r['関連マニュアルID'] || ''),
         note: String(r['備考'] || ''),
         updatedAt: String(r['更新日時'] || '')
       };
     });
 
-    _read(S.BOM, H.BOM).forEach(function(r) {
-      var bid = r['基板ID'], pc = r['部品コード'];
-      if (bid && pc) {
-        var key = bid + '|' + pc;
-        bom[key] = {
-          boardId: String(bid), partCode: String(pc),
-          qty: String(r['使用数量'] || '1'), unit: String(r['単位'] || '個'),
-          level: String(r['レベル'] || '1'), parentId: String(r['親ID'] || ''),
-          type: String(r['種別'] || '部品'), note: String(r['備考'] || '')
-        };
-      }
-    });
-
-    _read(S.MACHINES, H.MACHINES).forEach(function(r) {
-      if (r['機種コード']) machines[r['機種コード']] = {
-        code:String(r['機種コード']), name:String(r['機種名']||''),
-        type:String(r['種類']||''), brand:String(r['ブランド']||''),
-        date:String(r['発売日']||''), m:String(r['M基板']||''),
-        d:String(r['D基板']||''), de:String(r['DE基板']||''),
-        e:String(r['E基板']||''), c:String(r['C基板']||''),
-        s:String(r['S基板']||''), updatedAt:String(r['更新日時']||'')
-      };
-    });
-
     _read(S.BOARDS, H.BOARDS).forEach(function(r) {
       if (r['基板ID']) boards[r['基板ID']] = {
-        id:String(r['基板ID']), name:String(r['基板名']||''),
-        category:String(r['基板分類']||''), version:String(r['バージョン']||''),
-        status:String(r['ステータス']||'設計中'),
-        date:String(r['作成日']||''), note:String(r['備考']||''),
-        updatedAt:String(r['更新日時']||'')
+        id: String(r['基板ID']),
+        name: String(r['基板名'] || ''),
+        category: String(r['分類'] || ''),
+        version: String(r['バージョン'] || ''),
+        status: String(r['ステータス'] || ''),
+        photoUrl: String(r['写真URL'] || ''),
+        summary: String(r['機能概要'] || ''),
+        mainParts: String(r['主要部品'] || ''),
+        studyPoint: String(r['学習ポイント'] || ''),
+        relatedModels: String(r['関連機種コード'] || ''),
+        note: String(r['備考'] || ''),
+        updatedAt: String(r['更新日時'] || '')
       };
     });
 
-    _read(S.STOCK, H.STOCK).forEach(function(r) {
-      if (r['部品コード']) stock[r['部品コード']] = {
-        code:String(r['部品コード']), qty:String(r['在庫数']||''),
-        safe:String(r['安全在庫']||''), note:String(r['備考']||''),
-        updatedAt:String(r['更新日時']||'')
+    _read(S.MANUALS, H.MANUALS).forEach(function(r) {
+      if (r['マニュアルID']) manuals[r['マニュアルID']] = {
+        id: String(r['マニュアルID']),
+        title: String(r['タイトル'] || ''),
+        category: String(r['カテゴリ'] || ''),
+        targetSystem: String(r['対象システム'] || ''),
+        fileUrl: String(r['ファイルURL'] || ''),
+        summary: String(r['概要'] || ''),
+        tags: String(r['タグ'] || ''),
+        updatedBy: String(r['更新者'] || ''),
+        updatedAt: String(r['更新日時'] || '')
       };
     });
 
-    var changelog = _read(S.CHANGELOG, H.CHANGELOG).map(function(r) {
+    _read(S.FLOWS, H.FLOWS).forEach(function(r) {
+      if (r['フローID']) flows[r['フローID']] = {
+        id: String(r['フローID']),
+        title: String(r['タイトル'] || ''),
+        category: String(r['カテゴリ'] || ''),
+        summary: String(r['概要'] || ''),
+        steps: String(r['ステップ内容'] || ''),
+        diagramUrl: String(r['図解URL'] || ''),
+        manualIds: String(r['関連マニュアルID'] || ''),
+        note: String(r['備考'] || ''),
+        updatedAt: String(r['更新日時'] || '')
+      };
+    });
+
+    return { models: models, boards: boards, manuals: manuals, flows: flows };
+  });
+}
+
+// ── 機種図鑑 保存 ──
+function apiSaveModels(modelsObj) {
+  return _wrap(function() {
+    var rows = Object.values(modelsObj).map(function(m) {
       return {
-        date:   r['日時']      ? new Date(r['日時']).toISOString()     : '',
-        user:   String(r['担当者']  || ''),
-        ecn:    String(r['ECN番号'] || ''),
-        target: String(r['対象']    || ''),
-        type:   String(r['変更種別'] || ''),
-        before: String(r['変更前']  || ''),
-        after:  String(r['変更後']  || ''),
-        note:   String(r['備考']   || '')
+        '機種コード': m.code, '機種名': m.name || '', '種類': m.type || '', 'ブランド': m.brand || '',
+        '発売日': m.date || '', 'M基板': m.m || '', 'D基板': m.d || '', 'DE基板': m.de || '',
+        'E基板': m.e || '', 'C基板': m.c || '', 'S基板': m.s || '',
+        '写真URL': m.photoUrl || '', '概要': m.summary || '', '特徴・ポイント': m.features || '',
+        '学習メモ': m.studyNote || '', '関連マニュアルID': m.manualIds || '', '備考': m.note || '',
+        '更新日時': m.updatedAt || ''
       };
     });
-
-    var sslinks = _read(S.SSLINKS, H.SSLINKS).map(function(r) {
-      return { name:String(r['名前']||''), ssId:String(r['SSID']||''), sheet:String(r['シート名']||''), type:String(r['種別']||'inventory'), note:String(r['備考']||'') };
-    });
-
-    return { parts:parts, bom:bom, machines:machines, boards:boards, stock:stock, changelog:changelog, sslinks:sslinks, priceHistory:[], suppliers:suppliers };
-  });
-}
-
-// ── 部品マスタ保存 ──
-function apiSaveParts(partsObj) {
-  return _wrap(function() {
-    var rows = Object.values(partsObj).map(function(p) {
-      return { '部品コード':p.code, '部品名':p.name||'', 'メーカー名':p.maker||'', '公表単価':p.price||'', '仕入先':p.supplier||'', 'メイン商社':p.mainSupplier||'', '生産拠点':p.base||'', '廃番フラグ':p.eol||'0', 'RoHS対応':p.rohs||'0', '認定部品':p.certified||'0', '備考':p.note||'', '更新日時':p.updatedAt||'' };
-    });
-    _write(S.PARTS, H.PARTS, rows);
+    _write(S.MODELS, H.MODELS, rows);
     return { saved: rows.length };
   });
 }
 
-// ── サプライヤマスタ保存 ──
-function apiSaveSuppliers(supObj) {
-  return _wrap(function() {
-    var rows = Object.values(supObj).map(function(s) {
-      return { '企業コード':s.code, '企業名':s.name||'', '区分':s.type||'商社', '主要生産拠点':s.base||'', '担当者':s.pic||'', '連絡先':s.contact||'', '備考':s.note||'', '更新日時':s.updatedAt||'' };
-    });
-    _write(S.SUPPLIERS, H.SUPPLIERS, rows);
-    return { saved: rows.length };
-  });
-}
-
-// ── BOM保存 ──
-function apiSaveBom(bomObj) {
-  return _wrap(function() {
-    var rows = Object.values(bomObj).map(function(r) {
-      return { '基板ID':r.boardId, '部品コード':r.partCode, '使用数量':r.qty||'1', '単位':r.unit||'個', 'レベル':r.level||'1', '親ID':r.parentId||'', '種別':r.type||'部品', '備考':r.note||'' };
-    });
-    _write(S.BOM, H.BOM, rows);
-    return { saved: rows.length };
-  });
-}
-
-// ── 機種マスタ保存 ──
-function apiSaveMachines(machinesObj) {
-  return _wrap(function() {
-    var rows = Object.values(machinesObj).map(function(m) {
-      return { '機種コード':m.code, '機種名':m.name||'', '種類':m.type||'', 'ブランド':m.brand||'', '発売日':m.date||'', 'M基板':m.m||'', 'D基板':m.d||'', 'DE基板':m.de||'', 'E基板':m.e||'', 'C基板':m.c||'', 'S基板':m.s||'', '備考':'', '更新日時':m.updatedAt||'' };
-    });
-    _write(S.MACHINES, H.MACHINES, rows);
-    return { saved: rows.length };
-  });
-}
-
-// ── 基板マスタ保存 ──
+// ── 基板図鑑 保存 ──
 function apiSaveBoards(boardsObj) {
   return _wrap(function() {
     var rows = Object.values(boardsObj).map(function(b) {
-      return { '基板ID':b.id, '基板名':b.name||'', '基板分類':b.category||'', 'バージョン':b.version||'', 'ステータス':b.status||'設計中', '作成日':b.date||'', '備考':b.note||'', '更新日時':b.updatedAt||'' };
+      return {
+        '基板ID': b.id, '基板名': b.name || '', '分類': b.category || '', 'バージョン': b.version || '',
+        'ステータス': b.status || '', '写真URL': b.photoUrl || '', '機能概要': b.summary || '',
+        '主要部品': b.mainParts || '', '学習ポイント': b.studyPoint || '', '関連機種コード': b.relatedModels || '',
+        '備考': b.note || '', '更新日時': b.updatedAt || ''
+      };
     });
     _write(S.BOARDS, H.BOARDS, rows);
     return { saved: rows.length };
   });
 }
 
-// ── 在庫保存 ──
-function apiSaveStock(stockObj) {
+// ── マニュアル 保存 ──
+function apiSaveManuals(manualsObj) {
   return _wrap(function() {
-    var rows = Object.values(stockObj).map(function(s) {
-      return { '部品コード':s.code, '在庫数':s.qty||'', '安全在庫':s.safe||'', '備考':s.note||'', '更新日時':s.updatedAt||'' };
+    var rows = Object.values(manualsObj).map(function(mn) {
+      return {
+        'マニュアルID': mn.id, 'タイトル': mn.title || '', 'カテゴリ': mn.category || '',
+        '対象システム': mn.targetSystem || '', 'ファイルURL': mn.fileUrl || '', '概要': mn.summary || '',
+        'タグ': mn.tags || '', '更新者': mn.updatedBy || '', '更新日時': mn.updatedAt || ''
+      };
     });
-    _write(S.STOCK, H.STOCK, rows);
+    _write(S.MANUALS, H.MANUALS, rows);
     return { saved: rows.length };
   });
 }
 
-// ── 変更履歴を1件追加 ──
-function apiAppendChangelog(entry) {
+// ── フロー 保存 ──
+function apiSaveFlows(flowsObj) {
   return _wrap(function() {
-    var sh = _sheet(S.CHANGELOG, H.CHANGELOG);
-    if (sh.getLastRow() === 0) sh.appendRow(H.CHANGELOG);
-    sh.appendRow([
-      entry.date || new Date(),
-      entry.user  || '—',
-      entry.ecn   || '',
-      entry.target|| '',
-      entry.type  || '',
-      entry.before|| '',
-      entry.after || '',
-      entry.note  || ''
-    ]);
-    // 価格変更の場合は価格履歴にも記録
-    if (entry.type === '単価変更' && entry.target) {
-      var ph = _sheet(S.PRICE_H, H.PRICE_H);
-      if (ph.getLastRow() === 0) ph.appendRow(H.PRICE_H);
-      var oldP = parseFloat(entry.before || 0);
-      var newP = parseFloat(entry.after  || 0);
-      var pct  = oldP > 0 ? (((newP - oldP) / oldP) * 100).toFixed(1) + '%' : '—';
-      ph.appendRow([new Date(), entry.target, entry.before, entry.after, pct]);
-    }
-    return {};
-  });
-}
-
-// ── SS連携設定保存 ──
-function apiSaveSSLinks(links) {
-  return _wrap(function() {
-    var rows = (links || []).map(function(l) {
-      return { '名前':l.name||'', 'SSID':l.ssId||'', 'シート名':l.sheet||'', '種別':l.type||'inventory', '備考':l.note||'' };
+    var rows = Object.values(flowsObj).map(function(f) {
+      return {
+        'フローID': f.id, 'タイトル': f.title || '', 'カテゴリ': f.category || '',
+        '概要': f.summary || '', 'ステップ内容': f.steps || '', '図解URL': f.diagramUrl || '',
+        '関連マニュアルID': f.manualIds || '', '備考': f.note || '', '更新日時': f.updatedAt || ''
+      };
     });
-    _write(S.SSLINKS, H.SSLINKS, rows);
+    _write(S.FLOWS, H.FLOWS, rows);
     return { saved: rows.length };
   });
 }
 
-// ── 在庫を外部SSから同期 ──
-function apiSyncInventoryFromSS() {
-  return _wrap(function() {
-    var links = _read(S.SSLINKS, H.SSLINKS);
-    var synced = 0;
-    var errors = [];
-    var stockMap = {};
-
-    // 既存在庫を読み込み
-    _read(S.STOCK, H.STOCK).forEach(function(r) {
-      if (r['部品コード']) stockMap[r['部品コード']] = r;
-    });
-
-    links.forEach(function(link) {
-      if (!link['SSID']) return;
-      try {
-        var extSS    = SpreadsheetApp.openById(String(link['SSID']));
-        var shName   = link['シート名'] || extSS.getSheets()[0].getName();
-        var extSheet = extSS.getSheetByName(shName);
-        if (!extSheet) { errors.push(link['名前'] + ': シート「' + shName + '」が見つかりません'); return; }
-        var vals = extSheet.getDataRange().getValues();
-        if (vals.length < 2) return;
-        var headers = vals[0].map(String);
-        // 列を自動検出
-        var codeIdx  = _findColIdx(headers, ['部品コード','品番','PartCode','part_code','コード']);
-        var stockIdx = _findColIdx(headers, ['在庫数','在庫','Stock','stock_qty','現在庫']);
-        var safeIdx  = _findColIdx(headers, ['安全在庫','安全在庫数','SafeStock','safe_stock']);
-        if (codeIdx < 0) { errors.push(link['名前'] + ': 部品コード列が見つかりません'); return; }
-        if (stockIdx < 0) { errors.push(link['名前'] + ': 在庫数列が見つかりません'); return; }
-        vals.slice(1).forEach(function(row) {
-          var code = String(row[codeIdx] || '').trim();
-          if (!code) return;
-          stockMap[code] = {
-            '部品コード': code,
-            '在庫数':     row[stockIdx] !== '' ? row[stockIdx] : (stockMap[code] ? stockMap[code]['在庫数'] : ''),
-            '安全在庫':   safeIdx >= 0 ? row[safeIdx] : (stockMap[code] ? stockMap[code]['安全在庫'] : ''),
-            '備考':       '外部SS: ' + link['名前'],
-            '更新日時':   new Date().toISOString()
-          };
-          synced++;
-        });
-      } catch(e) {
-        errors.push(link['名前'] + ': ' + e.message);
-        Logger.log('SS Sync Error [' + link['名前'] + ']: ' + e.message);
-      }
-    });
-
-    _write(S.STOCK, H.STOCK, Object.values(stockMap));
-    return { synced: synced, errors: errors };
-  });
-}
-
-function _findColIdx(headers, candidates) {
-  for (var i = 0; i < candidates.length; i++) {
-    var idx = headers.indexOf(candidates[i]);
-    if (idx >= 0) return idx;
+// ── アップロード先フォルダ（未設定なら自動作成して記憶） ──
+function _uploadFolder() {
+  var id = getSetting('UPLOAD_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch(e) { /* フォールバックへ */ }
   }
-  return -1;
+  var it = DriveApp.getFoldersByName('図鑑・マニュアル_アップロード');
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder('図鑑・マニュアル_アップロード');
+  PropertiesService.getScriptProperties().setProperty('UPLOAD_FOLDER_ID', folder.getId());
+  return folder;
 }
 
-
+// ── ファイルアップロード（写真・マニュアルPDF等） ──
+function apiUploadFile(p) {
+  return _wrap(function() {
+    if (!p.base64Data || !p.fileName) throw new Error('ファイルデータ不足');
+    var mimeType = p.mimeType || 'application/octet-stream';
+    var blob = Utilities.newBlob(Utilities.base64Decode(p.base64Data), mimeType, p.fileName);
+    var file = _uploadFolder().createFile(blob);
+    return { url: file.getUrl(), fileId: file.getId(), fileName: p.fileName };
+  });
+}
 
 // ── エラーラッパー ──
 function _wrap(fn) {
