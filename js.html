@@ -231,6 +231,34 @@ function seedRealData(){
     .apiSeedRealData();
 }
 
+// ── 関連資料エディタ（機種図鑑） ──
+const RELATED_DOC_CATEGORIES = [
+  '構成表-見本機','構成表-量産',
+  '弊社見積書-仕掛基板','弊社見積書-PCB','弊社見積書-組立見積書',
+  '他社見積書-実装','他社見積書-組立',
+  '組立基準書','生産計画書','納品計画書','部品表','その他'
+];
+let _editingRelatedDocs = [];
+function renderRelatedDocEditor(){
+  const el = document.getElementById('related-doc-editor-list'); if(!el) return;
+  if (_editingRelatedDocs.length === 0) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);padding:6px 0 10px;">関連資料がありません。「＋ 関連資料を追加」から登録してください。</div>`; return; }
+  const opts = cat => RELATED_DOC_CATEGORIES.map(c=>`<option value="${_esc(c)}" ${c===cat?'selected':''}>${_esc(c)}</option>`).join('');
+  el.innerHTML = _editingRelatedDocs.map((d,i) => `
+    <div class="step-editor-row">
+      <div class="step-editor-row-head">
+        <select style="width:190px;" onchange="_editingRelatedDocs[${i}].category=this.value">${opts(d.category)}</select>
+        <input type="text" value="${_esc(d.title)}" placeholder="タイトル（例: 量産構成表_v2）" style="flex:1;" onchange="_editingRelatedDocs[${i}].title=this.value">
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeRelatedDocRow(${i})">🗑</button>
+      </div>
+      <div class="step-editor-grid">
+        <input type="text" value="${_esc(d.url)}" placeholder="URL（見積管理システムの見積書URL、Driveリンクなど）" onchange="_editingRelatedDocs[${i}].url=this.value">
+        <input type="text" value="${_esc(d.note)}" placeholder="備考（見積No・版数など）" onchange="_editingRelatedDocs[${i}].note=this.value">
+      </div>
+    </div>`).join('');
+}
+function addRelatedDocRow(){ _editingRelatedDocs.push({category:RELATED_DOC_CATEGORIES[0],title:'',url:'',note:''}); renderRelatedDocEditor(); }
+function removeRelatedDocRow(i){ _editingRelatedDocs.splice(i,1); renderRelatedDocEditor(); }
+
 // ════════════════════════════════════════════════════════════
 // 機種図鑑
 // ════════════════════════════════════════════════════════════
@@ -288,8 +316,13 @@ function openModelDetail(code){
     ? `<a href="#" onclick="event.preventDefault();closeModal('model-detail-modal');openBoardDetail('${_esc(v).replace(/'/g,"\\'")}')">${_esc(v)} 🔗</a>`
     : _esc(v);
   const manuals = _csv(m.manualIds).map(id => DATA.manuals[id]).filter(Boolean);
+  const kpis = [['売上台数',m.salesUnits],['売上目標',m.salesTarget],['リユース/エコ',m.reuseEcoUnits],['在庫数',m.stockQty]].filter(([,v])=>v);
+  const docs = _parseJsonArray(m.relatedDocs);
+  const docGroups = {};
+  docs.forEach(d => { const cat = d.category||'その他'; (docGroups[cat] = docGroups[cat]||[]).push(d); });
   document.getElementById('model-detail-body').innerHTML = `
     ${m.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(m.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    ${kpis.length?`<div class="summary-grid" style="margin-bottom:14px;">${kpis.map(([k,v])=>`<div class="summary-card" style="padding:10px 14px;"><div class="lbl">${_esc(k)}</div><div class="val" style="font-size:18px;">${_esc(v)}</div></div>`).join('')}</div>`:''}
     <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">機種コード</td><td style="padding:6px 10px;font-weight:600;">${_esc(m.code)}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">種類</td><td style="padding:6px 10px;">${_esc(m.type)||'—'}</td></tr>
@@ -301,7 +334,12 @@ function openModelDetail(code){
     ${m.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(m.summary)}</p>`:''}
     ${m.features?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">✨ 特徴・ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(m.features)}</div></div>`:''}
     ${m.studyNote?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📝 学習メモ</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(m.studyNote)}</div></div>`:''}
-    ${manuals.length?`<div><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📚 関連マニュアル</div>${manuals.map(mn=>`<a href="${_esc(mn.fileUrl)||'#'}" target="_blank" class="badge badge-default" style="margin:2px 4px 2px 0;text-decoration:none;">${_esc(mn.title)}</a>`).join('')}</div>`:''}
+    ${manuals.length?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📚 関連マニュアル</div>${manuals.map(mn=>`<a href="${_esc(mn.fileUrl)||'#'}" target="_blank" class="badge badge-default" style="margin:2px 4px 2px 0;text-decoration:none;">${_esc(mn.title)}</a>`).join('')}</div>`:''}
+    ${Object.keys(docGroups).length?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:6px;">📁 関連資料</div>${Object.keys(docGroups).map(cat=>`
+      <div style="margin-bottom:6px;">
+        <span class="badge badge-info" style="margin-bottom:3px;">${_esc(cat)}</span>
+        <div style="margin-top:3px;">${docGroups[cat].map(d=>`<a href="${_esc(d.url)||'#'}" target="_blank" style="display:block;font-size:12px;margin:2px 0;">🔗 ${_esc(d.title)||d.url}${d.note?` <span style="color:var(--text-sub);">（${_esc(d.note)}）</span>`:''}</a>`).join('')}</div>
+      </div>`).join('')}</div>`:''}
     ${m.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(m.note)}</div>`:''}
   `;
   document.getElementById('model-detail-modal').dataset.code = code;
@@ -335,8 +373,12 @@ function openModelEditModal(code){
   sv('model-photo-url', m?m.photoUrl:''); sv('model-summary', m?m.summary:'');
   sv('model-features', m?m.features:''); sv('model-study-note', m?m.studyNote:'');
   sv('model-manual-ids', m?m.manualIds:''); sv('model-note', m?m.note:'');
+  sv('model-sales-units', m?m.salesUnits:''); sv('model-sales-target', m?m.salesTarget:'');
+  sv('model-reuse-eco-units', m?m.reuseEcoUnits:''); sv('model-stock-qty', m?m.stockQty:'');
   document.getElementById('model-photo-status').textContent = '';
   document.getElementById('model-edit-modal').dataset.origCode = code || '';
+  _editingRelatedDocs = m ? _parseJsonArray(m.relatedDocs) : [];
+  renderRelatedDocEditor();
   openModal('model-edit-modal');
 }
 function saveModel(){
@@ -349,6 +391,9 @@ function saveModel(){
     code, name:v('model-name'), type:v('model-type'), brand:v('model-brand'),
     gameType: document.getElementById('model-game-type').value, date:v('model-date'),
     m:v('model-m'), d:v('model-d'), de:v('model-de'), e:v('model-e'), c:v('model-c'), s:v('model-s'),
+    salesUnits:v('model-sales-units'), salesTarget:v('model-sales-target'),
+    reuseEcoUnits:v('model-reuse-eco-units'), stockQty:v('model-stock-qty'),
+    relatedDocs: JSON.stringify(_editingRelatedDocs.filter(d=>d.title||d.url)),
     photoUrl:v('model-photo-url'), summary:v('model-summary'), features:v('model-features'),
     studyNote:v('model-study-note'), manualIds:v('model-manual-ids'), note:v('model-note'), updatedAt:_now()
   };

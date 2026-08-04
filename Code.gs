@@ -91,12 +91,13 @@ function _write(name, headers, rows) {
 
 // ── ヘッダー定義 ──
 var H = {
-  MODELS:  ['機種コード','機種名','種類','ブランド','遊技機タイプ','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
+  MODELS:  ['機種コード','機種名','種類','ブランド','遊技機タイプ','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','関連資料','売上台数','売上目標','リユース・エコ投入台数','在庫数','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
   BOARDS:  ['基板ID','基板名','分類','ブランド','対応区分','バージョン','ステータス','仕様','改定履歴','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
   MANUALS: ['マニュアルID','タイトル','カテゴリ','対象システム','ファイルURL','概要','タグ','更新者','更新日時'],
   FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時']
   // 「ステップ内容」列には構造化ステップ配列のJSON文字列を保存する（[{no,type,title,detail,owner,branchYes,branchNo,nextNo,manualIds,refLink,done,note}, ...]）
   // 基板図鑑の「仕様」列には[{label,value}, ...]、「改定履歴」列には[{version,date,changes}, ...]のJSON文字列を保存する
+  // 機種図鑑の「関連資料」列には[{category,title,url,note}, ...]のJSON文字列を保存する（構成表/見積書/組立基準書/生産計画書/納品計画書/部品表など）
   // JSONとして読めない場合はフロント側で1件の自由テキストとしてフォールバック表示する
 };
 
@@ -121,6 +122,11 @@ function apiLoadAll() {
         e:  String(r['E基板'] || ''),
         c:  String(r['C基板'] || ''),
         s:  String(r['S基板'] || ''),
+        relatedDocs: String(r['関連資料'] || ''),
+        salesUnits: String(r['売上台数'] || ''),
+        salesTarget: String(r['売上目標'] || ''),
+        reuseEcoUnits: String(r['リユース・エコ投入台数'] || ''),
+        stockQty: String(r['在庫数'] || ''),
         photoUrl: String(r['写真URL'] || ''),
         summary: String(r['概要'] || ''),
         features: String(r['特徴・ポイント'] || ''),
@@ -193,6 +199,8 @@ function apiSaveModels(modelsObj) {
         '遊技機タイプ': m.gameType || '',
         '発売日': m.date || '', 'M基板': m.m || '', 'D基板': m.d || '', 'DE基板': m.de || '',
         'E基板': m.e || '', 'C基板': m.c || '', 'S基板': m.s || '',
+        '関連資料': m.relatedDocs || '', '売上台数': m.salesUnits || '', '売上目標': m.salesTarget || '',
+        'リユース・エコ投入台数': m.reuseEcoUnits || '', '在庫数': m.stockQty || '',
         '写真URL': m.photoUrl || '', '概要': m.summary || '', '特徴・ポイント': m.features || '',
         '学習メモ': m.studyNote || '', '関連マニュアルID': m.manualIds || '', '備考': m.note || '',
         '更新日時': m.updatedAt || ''

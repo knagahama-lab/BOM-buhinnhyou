@@ -268,6 +268,20 @@
         </div>
         <div id="model-photo-status" style="font-size:11px;color:var(--text-sub);margin-top:4px;"></div>
       </div>
+      <div class="form-row">
+        <div class="form-field"><label>売上台数（参考値）</label><input type="number" id="model-sales-units" placeholder="例: 1200"></div>
+        <div class="form-field"><label>売上目標（参考値）</label><input type="number" id="model-sales-target" placeholder="例: 1500"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>リユース／エコ投入台数（参考値）</label><input type="number" id="model-reuse-eco-units"></div>
+        <div class="form-field"><label>在庫数（参考値）</label><input type="number" id="model-stock-qty"></div>
+      </div>
+      <div class="form-field" style="font-size:11px;color:var(--text-sub);margin-top:-8px;">※ 台数・在庫は他システム（楽楽販売など）が正の情報源の参考値です。手動で更新してください。</div>
+      <div class="form-field">
+        <label>関連資料（構成表・見積書・組立基準書・生産計画書・納品計画書・部品表など）</label>
+        <div class="step-editor-list" id="related-doc-editor-list"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addRelatedDocRow()">＋ 関連資料を追加</button>
+      </div>
       <div class="form-field"><label>概要</label><textarea id="model-summary" rows="2"></textarea></div>
       <div class="form-field"><label>特徴・ポイント</label><textarea id="model-features" rows="3" placeholder="座学で覚えておきたい特徴・見分け方など"></textarea></div>
       <div class="form-field"><label>学習メモ</label><textarea id="model-study-note" rows="3"></textarea></div>
