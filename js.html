@@ -66,6 +66,12 @@ function _parseSteps(stepsStr){
   }));
 }
 function _stepsToJson(steps){ return JSON.stringify(steps||[]); }
+// 汎用: JSON配列文字列をパース（壊れていれば空配列）
+function _parseJsonArray(str){
+  const s = String(str||'').trim();
+  if (!s) return [];
+  try { const arr = JSON.parse(s); return Array.isArray(arr) ? arr : []; } catch(e) { return []; }
+}
 
 // ── サイドバー / ページ切替 ──
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('collapsed'); }
@@ -238,6 +244,7 @@ function _populateModelFilters(){
 function _gameTypeBadge(gt){
   if (gt === 'パチンコ') return '<span class="badge badge-danger">パチンコ</span>';
   if (gt === '回胴') return '<span class="badge badge-info">回胴（スロット）</span>';
+  if (gt === '共通') return '<span class="badge badge-default">パチンコ／回胴共通</span>';
   return '';
 }
 function renderModelGrid(){
@@ -384,6 +391,7 @@ function renderBoardGrid(){
         <div class="zukan-card-title">${_esc(b.name || b.id)}</div>
         <div class="zukan-card-sub">${_esc(b.id)}${b.brand?' ・ '+_esc(b.brand):''}${b.version?' ・ v'+_esc(b.version):''}</div>
         <div class="zukan-card-tags">
+          ${_gameTypeBadge(b.gameType)}
           ${b.category?`<span class="badge badge-info">${_esc(b.category)}</span>`:''}
           ${b.status?`<span class="badge ${statusColor[b.status]||'badge-default'}">${_esc(b.status)}</span>`:''}
           ${b.relatedModels?`<span class="badge badge-default">採用機種${_csv(b.relatedModels).length}件</span>`:''}
@@ -395,8 +403,11 @@ function renderBoardGrid(){
 function openBoardDetail(id){
   const b = DATA.boards[id]; if(!b) return;
   document.getElementById('board-detail-title').textContent = '🔌 ' + (b.name || b.id);
+  const specs = _parseJsonArray(b.specs);
+  const revisions = _parseJsonArray(b.revisions).slice().sort((a,z)=> String(z.version||'').localeCompare(String(a.version||'')));
   document.getElementById('board-detail-body').innerHTML = `
     ${b.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(b.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    <div style="margin-bottom:10px;">${_gameTypeBadge(b.gameType)}</div>
     <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">基板ID</td><td style="padding:6px 10px;font-weight:600;">${_esc(b.id)}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">分類</td><td style="padding:6px 10px;">${_esc(b.category)||'—'}</td></tr>
@@ -413,6 +424,8 @@ function openBoardDetail(id){
       }</td></tr>
     </table>
     ${b.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(b.summary)}</p>`:''}
+    ${specs.length?`<div style="margin-bottom:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📐 仕様（性能）</div><table class="spec-table">${specs.map(s=>`<tr><td>${_esc(s.label)}</td><td>${_esc(s.value)}</td></tr>`).join('')}</table></div>`:''}
+    ${revisions.length?`<div style="margin-bottom:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:6px;">🕘 改定履歴</div>${revisions.map(r=>`<div class="revision-item"><div class="rev-head">${_esc(r.version)||'（版数未記入）'}<span class="rev-date">${_esc(r.date)}</span></div>${r.changes?`<div class="rev-changes">${_esc(r.changes)}</div>`:''}</div>`).join('')}</div>`:''}
     ${b.mainParts?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">🔧 主要部品</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.mainParts)}</div></div>`:''}
     ${b.studyPoint?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📝 学習ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.studyPoint)}</div></div>`:''}
     ${b.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(b.note)}</div>`:''}
@@ -435,6 +448,34 @@ function deleteBoardFromDetail(){
   }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
     .apiSaveBoards(DATA.boards);
 }
+let _editingSpecs = [], _editingRevisions = [];   // 基板編集モーダルの作業用 仕様/改定履歴 配列
+function renderSpecEditor(){
+  const el = document.getElementById('board-spec-editor-list'); if(!el) return;
+  if (_editingSpecs.length === 0) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);">仕様項目がありません（例: CPU, 液晶サイズ, ROM容量 など）</div>`; return; }
+  el.innerHTML = _editingSpecs.map((s,i) => `
+    <div class="kv-editor-row">
+      <input type="text" class="kv-label" value="${_esc(s.label)}" placeholder="項目名（例: CPU）" onchange="_editingSpecs[${i}].label=this.value">
+      <input type="text" class="kv-value" value="${_esc(s.value)}" placeholder="値（例: LEM70A）" onchange="_editingSpecs[${i}].value=this.value">
+      <button type="button" class="btn btn-danger btn-sm" onclick="removeSpecRow(${i})">🗑</button>
+    </div>`).join('');
+}
+function addSpecRow(){ _editingSpecs.push({label:'',value:''}); renderSpecEditor(); }
+function removeSpecRow(i){ _editingSpecs.splice(i,1); renderSpecEditor(); }
+
+function renderRevisionEditor(){
+  const el = document.getElementById('board-revision-editor-list'); if(!el) return;
+  if (_editingRevisions.length === 0) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);">改定履歴がありません（例: VerB, 2023/4/26, CGROMを64G→124Gに変更 など）</div>`; return; }
+  el.innerHTML = _editingRevisions.map((r,i) => `
+    <div class="kv-editor-row">
+      <input type="text" class="kv-label" value="${_esc(r.version)}" placeholder="版数（例: VerB）" onchange="_editingRevisions[${i}].version=this.value">
+      <input type="text" class="kv-date" value="${_esc(r.date)}" placeholder="日付" onchange="_editingRevisions[${i}].date=this.value">
+      <input type="text" class="kv-value" value="${_esc(r.changes)}" placeholder="変更点" onchange="_editingRevisions[${i}].changes=this.value">
+      <button type="button" class="btn btn-danger btn-sm" onclick="removeRevisionRow(${i})">🗑</button>
+    </div>`).join('');
+}
+function addRevisionRow(){ _editingRevisions.push({version:'',date:'',changes:''}); renderRevisionEditor(); }
+function removeRevisionRow(i){ _editingRevisions.splice(i,1); renderRevisionEditor(); }
+
 function openBoardEditModal(id){
   _populateBoardFilters();
   const b = id ? DATA.boards[id] : null;
@@ -442,10 +483,14 @@ function openBoardEditModal(id){
   const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
   sv('board-id', b?b.id:''); sv('board-name', b?b.name:''); sv('board-category', b?b.category:'');
   sv('board-brand', b?b.brand:''); sv('board-version', b?b.version:'');
+  document.getElementById('board-game-type').value = b?(b.gameType||''):'';
   document.getElementById('board-status').value = b?(b.status||'設計中'):'設計中';
   sv('board-photo-url', b?b.photoUrl:''); sv('board-summary', b?b.summary:'');
   sv('board-main-parts', b?b.mainParts:''); sv('board-study-point', b?b.studyPoint:'');
   sv('board-related-models', b?b.relatedModels:''); sv('board-note', b?b.note:'');
+  _editingSpecs = b ? _parseJsonArray(b.specs) : [];
+  _editingRevisions = b ? _parseJsonArray(b.revisions) : [];
+  renderSpecEditor(); renderRevisionEditor();
   document.getElementById('board-edit-modal').dataset.origId = id || '';
   openModal('board-edit-modal');
 }
@@ -457,6 +502,9 @@ function saveBoard(){
   if (origId && origId !== id) delete DATA.boards[origId];
   DATA.boards[id] = {
     id, name:v('board-name'), category:v('board-category'), brand:v('board-brand'), version:v('board-version'),
+    gameType: document.getElementById('board-game-type').value,
+    specs: JSON.stringify(_editingSpecs.filter(s=>s.label||s.value)),
+    revisions: JSON.stringify(_editingRevisions.filter(r=>r.version||r.date||r.changes)),
     status:document.getElementById('board-status').value, photoUrl:v('board-photo-url'),
     summary:v('board-summary'), mainParts:v('board-main-parts'), studyPoint:v('board-study-point'),
     relatedModels:v('board-related-models'), note:v('board-note'), updatedAt:_now()

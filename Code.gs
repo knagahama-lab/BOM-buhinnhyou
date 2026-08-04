@@ -92,11 +92,12 @@ function _write(name, headers, rows) {
 // ── ヘッダー定義 ──
 var H = {
   MODELS:  ['機種コード','機種名','種類','ブランド','遊技機タイプ','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
-  BOARDS:  ['基板ID','基板名','分類','ブランド','バージョン','ステータス','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
+  BOARDS:  ['基板ID','基板名','分類','ブランド','対応区分','バージョン','ステータス','仕様','改定履歴','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
   MANUALS: ['マニュアルID','タイトル','カテゴリ','対象システム','ファイルURL','概要','タグ','更新者','更新日時'],
   FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時']
   // 「ステップ内容」列には構造化ステップ配列のJSON文字列を保存する（[{no,type,title,detail,owner,branchYes,branchNo,nextNo,manualIds,refLink,done,note}, ...]）
-  // JSONとして読めない場合はフロント側で1ステップの自由テキストとしてフォールバック表示する
+  // 基板図鑑の「仕様」列には[{label,value}, ...]、「改定履歴」列には[{version,date,changes}, ...]のJSON文字列を保存する
+  // JSONとして読めない場合はフロント側で1件の自由テキストとしてフォールバック表示する
 };
 
 // ══════════════════════════════════════════════════
@@ -136,8 +137,11 @@ function apiLoadAll() {
         name: String(r['基板名'] || ''),
         category: String(r['分類'] || ''),
         brand: String(r['ブランド'] || ''),
+        gameType: String(r['対応区分'] || ''),
         version: String(r['バージョン'] || ''),
         status: String(r['ステータス'] || ''),
+        specs: String(r['仕様'] || ''),
+        revisions: String(r['改定履歴'] || ''),
         photoUrl: String(r['写真URL'] || ''),
         summary: String(r['機能概要'] || ''),
         mainParts: String(r['主要部品'] || ''),
@@ -204,8 +208,9 @@ function apiSaveBoards(boardsObj) {
   return _wrap(function() {
     var rows = Object.values(boardsObj).map(function(b) {
       return {
-        '基板ID': b.id, '基板名': b.name || '', '分類': b.category || '', 'ブランド': b.brand || '', 'バージョン': b.version || '',
-        'ステータス': b.status || '', '写真URL': b.photoUrl || '', '機能概要': b.summary || '',
+        '基板ID': b.id, '基板名': b.name || '', '分類': b.category || '', 'ブランド': b.brand || '',
+        '対応区分': b.gameType || '', 'バージョン': b.version || '',
+        'ステータス': b.status || '', '仕様': b.specs || '', '改定履歴': b.revisions || '', '写真URL': b.photoUrl || '', '機能概要': b.summary || '',
         '主要部品': b.mainParts || '', '学習ポイント': b.studyPoint || '', '関連機種コード': b.relatedModels || '',
         '備考': b.note || '', '更新日時': b.updatedAt || ''
       };

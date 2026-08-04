@@ -306,7 +306,17 @@
         <div class="form-field"><label>分類</label><input type="text" id="board-category" list="board-category-list" placeholder="例: 仕掛／回路設計／製品 など"></div>
         <div class="form-field"><label>ブランド</label><input type="text" id="board-brand" placeholder="例: FF+／FJ+ など"></div>
       </div>
-      <div class="form-field"><label>バージョン</label><input type="text" id="board-version"></div>
+      <div class="form-row">
+        <div class="form-field"><label>バージョン</label><input type="text" id="board-version"></div>
+        <div class="form-field"><label>対応区分</label>
+          <select id="board-game-type">
+            <option value="">未設定</option>
+            <option value="パチンコ">パチンコ</option>
+            <option value="回胴">回胴（スロット）</option>
+            <option value="共通">パチンコ／回胴共通</option>
+          </select>
+        </div>
+      </div>
       <datalist id="board-category-list"></datalist>
       <div class="form-field"><label>ステータス</label>
         <select id="board-status">
@@ -323,8 +333,18 @@
         </div>
       </div>
       <div class="form-field"><label>機能概要</label><textarea id="board-summary" rows="2"></textarea></div>
+      <div class="form-field">
+        <label>仕様（性能・スペック）</label>
+        <div class="kv-editor-list" id="board-spec-editor-list"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addSpecRow()">＋ 仕様項目を追加</button>
+      </div>
+      <div class="form-field">
+        <label>改定履歴（バージョンごとの変更点）</label>
+        <div class="kv-editor-list" id="board-revision-editor-list"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addRevisionRow()">＋ 改定履歴を追加</button>
+      </div>
       <div class="form-field"><label>主要部品</label><textarea id="board-main-parts" rows="2"></textarea></div>
-      <div class="form-field"><label>学習ポイント</label><textarea id="board-study-point" rows="3"></textarea></div>
+      <div class="form-field"><label>学習ポイント</label><textarea id="board-study-point" rows="3" placeholder="覚えておきたい見分け方・注意点など"></textarea></div>
       <div class="form-field"><label>関連機種コード（カンマ区切り）</label><input type="text" id="board-related-models"></div>
       <div class="form-field"><label>備考</label><textarea id="board-note" rows="2"></textarea></div>
     </div>

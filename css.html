@@ -176,6 +176,21 @@ tr:hover td{background:#f8fafc;}
 .editable-cell:hover { background: rgba(37,99,235,0.05); border-color: rgba(37,99,235,0.3); }
 .inline-edit-input { width:100%; box-sizing:border-box; padding:4px 6px; border:1px solid var(--primary); border-radius:4px; font-size:12px; font-family:inherit; outline:none; box-shadow:0 0 0 2px rgba(37,99,235,0.2); background:#fff; margin:-4px -6px; }
 
+/* 仕様・改定履歴エディタ（基板図鑑） */
+.kv-editor-list{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.kv-editor-row{ display:flex; gap:6px; align-items:flex-start; }
+.kv-editor-row input, .kv-editor-row textarea{ font-size:12px; padding:6px 8px; }
+.kv-editor-row .kv-label{ width:120px; flex-shrink:0; }
+.kv-editor-row .kv-date{ width:100px; flex-shrink:0; }
+.kv-editor-row .kv-value{ flex:1; }
+.spec-table{ width:100%; font-size:12.5px; border-collapse:collapse; margin-bottom:10px; }
+.spec-table td{ padding:5px 10px; border-bottom:1px solid var(--border-light); }
+.spec-table td:first-child{ color:var(--text-sub); width:35%; }
+.revision-item{ border-left:3px solid var(--primary); padding:6px 10px; margin-bottom:8px; background:#fafbff; border-radius:0 6px 6px 0; }
+.revision-item .rev-head{ font-size:12px; font-weight:700; display:flex; gap:8px; align-items:baseline; }
+.revision-item .rev-date{ font-size:11px; color:var(--text-sub); font-weight:400; }
+.revision-item .rev-changes{ font-size:12px; margin-top:3px; white-space:pre-wrap; color:var(--text); }
+
 .badge{ display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600; white-space:nowrap; }
 .badge-default{background:#f1f5f9;color:#475569;}
 .badge-success{background:#f0fdf4;color:#16a34a;}
