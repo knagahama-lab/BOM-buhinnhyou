@@ -208,6 +208,16 @@
         <button class="btn btn-primary" onclick="seedRealData()">🌱 初期データを投入する</button>
         <div id="seed-status" style="font-size:12px;color:var(--text-sub);margin-top:8px;"></div>
       </div>
+      <div class="table-wrap" style="padding:20px;margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:8px;">🌱 データ投入（第2弾：基板PCB価格・機種一覧）</h3>
+        <p style="font-size:12.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.8;">
+          「基板PCB価格」「機種一覧」スプレッドシートから読み取った原価・公表単価・見積書リンク・部品表リンク・基板仕様書リンク・機種の構成表資料などを投入します。<br>
+          既存データは残し、関連資料・仕様は追記（重複除去）、その他項目は上書きします（複数回実行しても安全です）。<br>
+          ※「機種メモ」「③部品マスタ」シートの詳細（生産計画・部品単価表）は取り込んでいません。必要なマスタは関連資料としてリンクを追記してください。
+        </p>
+        <button class="btn btn-primary" onclick="seedRealData2()">🌱 第2弾データを投入する</button>
+        <div id="seed2-status" style="font-size:12px;color:var(--text-sub);margin-top:8px;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -260,6 +270,7 @@
         <div class="form-field"><label>C基板</label><input type="text" id="model-c"></div>
         <div class="form-field"><label>S基板</label><input type="text" id="model-s"></div>
       </div>
+      <div class="form-field"><label>R基板</label><input type="text" id="model-r"></div>
       <div class="form-field">
         <label>写真URL</label>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -356,6 +367,11 @@
         <label>改定履歴（バージョンごとの変更点）</label>
         <div class="kv-editor-list" id="board-revision-editor-list"></div>
         <button type="button" class="btn btn-outline btn-sm" onclick="addRevisionRow()">＋ 改定履歴を追加</button>
+      </div>
+      <div class="form-field">
+        <label>関連資料（見積書・部品表・基板仕様書など）</label>
+        <div class="step-editor-list" id="board-doc-editor-list"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addBoardDocRow()">＋ 関連資料を追加</button>
       </div>
       <div class="form-field"><label>主要部品</label><textarea id="board-main-parts" rows="2"></textarea></div>
       <div class="form-field"><label>学習ポイント</label><textarea id="board-study-point" rows="3" placeholder="覚えておきたい見分け方・注意点など"></textarea></div>

@@ -230,6 +230,19 @@ function seedRealData(){
   }).withFailureHandler(err => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー: ' + _esc(err.message||err) + '</span>'; })
     .apiSeedRealData();
 }
+// ── データ投入 第2弾（基板PCB価格・機種一覧から抽出：原価/公表単価/見積書リンク等） ──
+function seedRealData2(){
+  const statusEl = document.getElementById('seed2-status');
+  statusEl.textContent = '⏳ 投入中...';
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) {
+      statusEl.innerHTML = `<span style="color:var(--success);">✅ 機種${res.models}件・基板${res.boards}件を投入しました</span>`;
+      showToast('第2弾データを投入しました');
+      loadAll();
+    } else statusEl.innerHTML = '<span style="color:var(--danger);">❌ ' + _esc((res&&res.error)||'失敗') + '</span>';
+  }).withFailureHandler(err => { statusEl.innerHTML = '<span style="color:var(--danger);">❌ 通信エラー: ' + _esc(err.message||err) + '</span>'; })
+    .apiSeedRealData2();
+}
 
 // ── 関連資料エディタ（機種図鑑） ──
 const RELATED_DOC_CATEGORIES = [
@@ -258,6 +271,32 @@ function renderRelatedDocEditor(){
 }
 function addRelatedDocRow(){ _editingRelatedDocs.push({category:RELATED_DOC_CATEGORIES[0],title:'',url:'',note:''}); renderRelatedDocEditor(); }
 function removeRelatedDocRow(i){ _editingRelatedDocs.splice(i,1); renderRelatedDocEditor(); }
+
+// ── 関連資料エディタ（基板図鑑） ──
+const BOARD_DOC_CATEGORIES = [
+  '見積書-PCB原価','見積書-仕掛原価','見積書-PCB公表単価','見積書-仕掛公表単価','見積書-過去見積',
+  '部品表','基板仕様書','関連基板情報','その他'
+];
+let _editingBoardDocs = [];
+function renderBoardDocEditor(){
+  const el = document.getElementById('board-doc-editor-list'); if(!el) return;
+  if (_editingBoardDocs.length === 0) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);padding:6px 0 10px;">関連資料がありません。「＋ 関連資料を追加」から登録してください。</div>`; return; }
+  const opts = cat => BOARD_DOC_CATEGORIES.map(c=>`<option value="${_esc(c)}" ${c===cat?'selected':''}>${_esc(c)}</option>`).join('');
+  el.innerHTML = _editingBoardDocs.map((d,i) => `
+    <div class="step-editor-row">
+      <div class="step-editor-row-head">
+        <select style="width:190px;" onchange="_editingBoardDocs[${i}].category=this.value">${opts(d.category)}</select>
+        <input type="text" value="${_esc(d.title)}" placeholder="タイトル（例: PCB原価見積）" style="flex:1;" onchange="_editingBoardDocs[${i}].title=this.value">
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeBoardDocRow(${i})">🗑</button>
+      </div>
+      <div class="step-editor-grid">
+        <input type="text" value="${_esc(d.url)}" placeholder="URL（見積書・部品表・基板仕様書のDriveリンクなど）" onchange="_editingBoardDocs[${i}].url=this.value">
+        <input type="text" value="${_esc(d.note)}" placeholder="備考" onchange="_editingBoardDocs[${i}].note=this.value">
+      </div>
+    </div>`).join('');
+}
+function addBoardDocRow(){ _editingBoardDocs.push({category:BOARD_DOC_CATEGORIES[0],title:'',url:'',note:''}); renderBoardDocEditor(); }
+function removeBoardDocRow(i){ _editingBoardDocs.splice(i,1); renderBoardDocEditor(); }
 
 // ════════════════════════════════════════════════════════════
 // 機種図鑑
@@ -292,7 +331,7 @@ function renderModelGrid(){
   const grid = document.getElementById('model-grid');
   if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する機種がありません</div>`; return; }
   grid.innerHTML = list.map(m => {
-    const boards = ['m','d','de','e','c','s'].map(k=>m[k]).filter(Boolean);
+    const boards = ['m','d','de','e','c','s','r'].map(k=>m[k]).filter(Boolean);
     const photo = m.photoUrl ? `<img src="${_esc(m.photoUrl)}" alt="">` : '🏭';
     return `<div class="zukan-card" onclick="openModelDetail('${_esc(m.code).replace(/'/g,"\\'")}')">
       <div class="zukan-card-photo">${photo}</div>
@@ -311,7 +350,7 @@ function renderModelGrid(){
 function openModelDetail(code){
   const m = DATA.models[code]; if(!m) return;
   document.getElementById('model-detail-title').textContent = '🏭 ' + (m.name || m.code);
-  const boardRows = [['M基板',m.m],['D基板',m.d],['DE基板',m.de],['E基板',m.e],['C基板',m.c],['S基板',m.s]].filter(([,v])=>v);
+  const boardRows = [['M基板',m.m],['D基板',m.d],['DE基板',m.de],['E基板',m.e],['C基板',m.c],['S基板',m.s],['R基板',m.r]].filter(([,v])=>v);
   const _boardCell = v => DATA.boards[v]
     ? `<a href="#" onclick="event.preventDefault();closeModal('model-detail-modal');openBoardDetail('${_esc(v).replace(/'/g,"\\'")}')">${_esc(v)} 🔗</a>`
     : _esc(v);
@@ -369,7 +408,7 @@ function openModelEditModal(code){
   sv('model-brand', m?m.brand:''); sv('model-date', m?m.date:'');
   document.getElementById('model-game-type').value = m?(m.gameType||''):'';
   sv('model-m', m?m.m:''); sv('model-d', m?m.d:''); sv('model-de', m?m.de:'');
-  sv('model-e', m?m.e:''); sv('model-c', m?m.c:''); sv('model-s', m?m.s:'');
+  sv('model-e', m?m.e:''); sv('model-c', m?m.c:''); sv('model-s', m?m.s:''); sv('model-r', m?m.r:'');
   sv('model-photo-url', m?m.photoUrl:''); sv('model-summary', m?m.summary:'');
   sv('model-features', m?m.features:''); sv('model-study-note', m?m.studyNote:'');
   sv('model-manual-ids', m?m.manualIds:''); sv('model-note', m?m.note:'');
@@ -390,7 +429,7 @@ function saveModel(){
   DATA.models[code] = {
     code, name:v('model-name'), type:v('model-type'), brand:v('model-brand'),
     gameType: document.getElementById('model-game-type').value, date:v('model-date'),
-    m:v('model-m'), d:v('model-d'), de:v('model-de'), e:v('model-e'), c:v('model-c'), s:v('model-s'),
+    m:v('model-m'), d:v('model-d'), de:v('model-de'), e:v('model-e'), c:v('model-c'), s:v('model-s'), r:v('model-r'),
     salesUnits:v('model-sales-units'), salesTarget:v('model-sales-target'),
     reuseEcoUnits:v('model-reuse-eco-units'), stockQty:v('model-stock-qty'),
     relatedDocs: JSON.stringify(_editingRelatedDocs.filter(d=>d.title||d.url)),
@@ -450,6 +489,9 @@ function openBoardDetail(id){
   document.getElementById('board-detail-title').textContent = '🔌 ' + (b.name || b.id);
   const specs = _parseJsonArray(b.specs);
   const revisions = _parseJsonArray(b.revisions).slice().sort((a,z)=> String(z.version||'').localeCompare(String(a.version||'')));
+  const bdocs = _parseJsonArray(b.relatedDocs);
+  const bdocGroups = {};
+  bdocs.forEach(d => { const cat = d.category||'その他'; (bdocGroups[cat] = bdocGroups[cat]||[]).push(d); });
   document.getElementById('board-detail-body').innerHTML = `
     ${b.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(b.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
     <div style="margin-bottom:10px;">${_gameTypeBadge(b.gameType)}</div>
@@ -471,6 +513,11 @@ function openBoardDetail(id){
     ${b.summary?`<p style="font-size:12.5px;margin-bottom:10px;white-space:pre-wrap;">${_esc(b.summary)}</p>`:''}
     ${specs.length?`<div style="margin-bottom:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📐 仕様（性能）</div><table class="spec-table">${specs.map(s=>`<tr><td>${_esc(s.label)}</td><td>${_esc(s.value)}</td></tr>`).join('')}</table></div>`:''}
     ${revisions.length?`<div style="margin-bottom:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:6px;">🕘 改定履歴</div>${revisions.map(r=>`<div class="revision-item"><div class="rev-head">${_esc(r.version)||'（版数未記入）'}<span class="rev-date">${_esc(r.date)}</span></div>${r.changes?`<div class="rev-changes">${_esc(r.changes)}</div>`:''}</div>`).join('')}</div>`:''}
+    ${Object.keys(bdocGroups).length?`<div style="margin-bottom:12px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:6px;">📁 関連資料</div>${Object.keys(bdocGroups).map(cat=>`
+      <div style="margin-bottom:6px;">
+        <span class="badge badge-info" style="margin-bottom:3px;">${_esc(cat)}</span>
+        <div style="margin-top:3px;">${bdocGroups[cat].map(d=>`<a href="${_esc(d.url)||'#'}" target="_blank" style="display:block;font-size:12px;margin:2px 0;">🔗 ${_esc(d.title)||d.url}${d.note?` <span style="color:var(--text-sub);">（${_esc(d.note)}）</span>`:''}</a>`).join('')}</div>
+      </div>`).join('')}</div>`:''}
     ${b.mainParts?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">🔧 主要部品</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.mainParts)}</div></div>`:''}
     ${b.studyPoint?`<div style="margin-bottom:10px;"><div style="font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:4px;">📝 学習ポイント</div><div style="font-size:12.5px;white-space:pre-wrap;">${_esc(b.studyPoint)}</div></div>`:''}
     ${b.note?`<div style="margin-top:10px;font-size:11.5px;color:var(--text-sub);">備考: ${_esc(b.note)}</div>`:''}
@@ -535,7 +582,8 @@ function openBoardEditModal(id){
   sv('board-related-models', b?b.relatedModels:''); sv('board-note', b?b.note:'');
   _editingSpecs = b ? _parseJsonArray(b.specs) : [];
   _editingRevisions = b ? _parseJsonArray(b.revisions) : [];
-  renderSpecEditor(); renderRevisionEditor();
+  _editingBoardDocs = b ? _parseJsonArray(b.relatedDocs) : [];
+  renderSpecEditor(); renderRevisionEditor(); renderBoardDocEditor();
   document.getElementById('board-edit-modal').dataset.origId = id || '';
   openModal('board-edit-modal');
 }
@@ -550,6 +598,7 @@ function saveBoard(){
     gameType: document.getElementById('board-game-type').value,
     specs: JSON.stringify(_editingSpecs.filter(s=>s.label||s.value)),
     revisions: JSON.stringify(_editingRevisions.filter(r=>r.version||r.date||r.changes)),
+    relatedDocs: JSON.stringify(_editingBoardDocs.filter(d=>d.title||d.url)),
     status:document.getElementById('board-status').value, photoUrl:v('board-photo-url'),
     summary:v('board-summary'), mainParts:v('board-main-parts'), studyPoint:v('board-study-point'),
     relatedModels:v('board-related-models'), note:v('board-note'), updatedAt:_now()
