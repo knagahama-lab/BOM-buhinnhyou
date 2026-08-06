@@ -31,6 +31,13 @@ window.addEventListener('load', () => {
 
 // ── ユーティリティ ──
 function _esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// GoogleドライブのファイルURL（.../file/d/ID/view など）を<img src>で直接表示できる形式に変換する。
+// 旧アップロード分（閲覧URLがそのまま保存されている）でも表示できるようにするための救済措置。
+function _driveImgUrl(url){
+  const s = String(url||''); if (!s) return s;
+  const m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? `https://drive.google.com/uc?export=view&id=${m[1]}` : s;
+}
 function _genId(prefix){ return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,5).toUpperCase(); }
 function _now(){ return new Date().toISOString(); }
 function showToast(msg, isError=false){
@@ -122,7 +129,9 @@ function uploadToField(inputEl, targetFieldId){
     const b64 = e.target.result.split(',')[1];
     google.script.run.withSuccessHandler(res => {
       if (res && res.success) {
-        document.getElementById(targetFieldId).value = res.url;
+        // 写真URL欄は<img>で直接表示するのでdirectUrl（Drive直接表示形式）を使う
+        const isPhoto = /photo-url$/.test(targetFieldId);
+        document.getElementById(targetFieldId).value = (isPhoto && res.directUrl) ? res.directUrl : res.url;
         if (statusEl) statusEl.innerHTML = '<span style="color:var(--success);">✅ アップロード完了</span>';
         showToast('アップロードしました');
       } else {
@@ -332,7 +341,7 @@ function renderModelGrid(){
   if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する機種がありません</div>`; return; }
   grid.innerHTML = list.map(m => {
     const boards = ['m','d','de','e','c','s','r'].map(k=>m[k]).filter(Boolean);
-    const photo = m.photoUrl ? `<img src="${_esc(m.photoUrl)}" alt="">` : '🏭';
+    const photo = m.photoUrl ? `<img src="${_esc(_driveImgUrl(m.photoUrl))}" alt="">` : '🏭';
     return `<div class="zukan-card" onclick="openModelDetail('${_esc(m.code).replace(/'/g,"\\'")}')">
       <div class="zukan-card-photo">${photo}</div>
       <div class="zukan-card-body">
@@ -360,7 +369,7 @@ function openModelDetail(code){
   const docGroups = {};
   docs.forEach(d => { const cat = d.category||'その他'; (docGroups[cat] = docGroups[cat]||[]).push(d); });
   document.getElementById('model-detail-body').innerHTML = `
-    ${m.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(m.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    ${m.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(_driveImgUrl(m.photoUrl))}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
     ${kpis.length?`<div class="summary-grid" style="margin-bottom:14px;">${kpis.map(([k,v])=>`<div class="summary-card" style="padding:10px 14px;"><div class="lbl">${_esc(k)}</div><div class="val" style="font-size:18px;">${_esc(v)}</div></div>`).join('')}</div>`:''}
     <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">機種コード</td><td style="padding:6px 10px;font-weight:600;">${_esc(m.code)}</td></tr>
@@ -448,27 +457,38 @@ function saveModel(){
 // ════════════════════════════════════════════════════════════
 function _populateBoardFilters(){
   const list = Object.values(DATA.boards);
+  _fillSelect(document.getElementById('board-filter-type'), _uniqSorted(list.map(b=>b.type)), 'すべての種類');
   _fillSelect(document.getElementById('board-filter-category'), _uniqSorted(list.map(b=>b.category)), 'すべての分類');
   _fillSelect(document.getElementById('board-filter-status'), _uniqSorted(list.map(b=>b.status)), 'すべてのステータス');
+  _fillDatalist('board-type-list', _uniqSorted(list.map(b=>b.type)));
   _fillDatalist('board-category-list', _uniqSorted(list.map(b=>b.category)));
 }
 function renderBoardGrid(){
   _populateBoardFilters();
   const kw = (document.getElementById('board-search').value||'').toLowerCase();
+  const ft = document.getElementById('board-filter-type').value;
   const fc = document.getElementById('board-filter-category').value;
   const fs = document.getElementById('board-filter-status').value;
+  const fg = document.getElementById('board-filter-gametype').value;
+  const sortKey = document.getElementById('board-sort').value;
   const list = Object.values(DATA.boards).filter(b => {
-    const txt = [b.id,b.name,b.category,b.summary,b.mainParts].join(' ').toLowerCase();
+    const txt = [b.id,b.name,b.type,b.category,b.summary,b.mainParts].join(' ').toLowerCase();
     const mk = !kw || txt.includes(kw);
+    const mt = !ft || b.type === ft;
     const mc = !fc || b.category === fc;
     const ms = !fs || b.status === fs;
-    return mk && mc && ms;
-  }).sort((a,b)=> String(a.id).localeCompare(String(b.id)));
+    const mg = !fg || b.gameType === fg;
+    return mk && mt && mc && ms && mg;
+  }).sort((a,b) => {
+    if (sortKey === 'id') return String(a.id).localeCompare(String(b.id));
+    const av = String(a[sortKey]||''), bv = String(b[sortKey]||'');
+    return av.localeCompare(bv) || String(a.id).localeCompare(String(b.id));
+  });
   const grid = document.getElementById('board-grid');
   if (list.length === 0) { grid.innerHTML = `<div class="zukan-empty" style="grid-column:1/-1;"><div class="zukan-empty-icon">📭</div>該当する基板がありません</div>`; return; }
   const statusColor = { '量産中':'badge-success', '設計中':'badge-warning', '生産終了':'badge-default' };
   grid.innerHTML = list.map(b => {
-    const photo = b.photoUrl ? `<img src="${_esc(b.photoUrl)}" alt="">` : '🔌';
+    const photo = b.photoUrl ? `<img src="${_esc(_driveImgUrl(b.photoUrl))}" alt="">` : '🔌';
     return `<div class="zukan-card" onclick="openBoardDetail('${_esc(b.id).replace(/'/g,"\\'")}')">
       <div class="zukan-card-photo">${photo}</div>
       <div class="zukan-card-body">
@@ -476,7 +496,8 @@ function renderBoardGrid(){
         <div class="zukan-card-sub">${_esc(b.id)}${b.brand?' ・ '+_esc(b.brand):''}${b.version?' ・ v'+_esc(b.version):''}</div>
         <div class="zukan-card-tags">
           ${_gameTypeBadge(b.gameType)}
-          ${b.category?`<span class="badge badge-info">${_esc(b.category)}</span>`:''}
+          ${b.type?`<span class="badge badge-info">${_esc(b.type)}</span>`:''}
+          ${b.category?`<span class="badge badge-default">${_esc(b.category)}</span>`:''}
           ${b.status?`<span class="badge ${statusColor[b.status]||'badge-default'}">${_esc(b.status)}</span>`:''}
           ${b.relatedModels?`<span class="badge badge-default">採用機種${_csv(b.relatedModels).length}件</span>`:''}
         </div>
@@ -493,10 +514,11 @@ function openBoardDetail(id){
   const bdocGroups = {};
   bdocs.forEach(d => { const cat = d.category||'その他'; (bdocGroups[cat] = bdocGroups[cat]||[]).push(d); });
   document.getElementById('board-detail-body').innerHTML = `
-    ${b.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(b.photoUrl)}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
+    ${b.photoUrl?`<div class="zukan-card-photo" style="border-radius:var(--radius);margin-bottom:14px;max-height:220px;"><img src="${_esc(_driveImgUrl(b.photoUrl))}" style="width:100%;height:100%;object-fit:cover;"></div>`:''}
     <div style="margin-bottom:10px;">${_gameTypeBadge(b.gameType)}</div>
     <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-bottom:14px;">
       <tr><td style="padding:6px 10px;color:var(--text-sub);width:30%;">基板ID</td><td style="padding:6px 10px;font-weight:600;">${_esc(b.id)}</td></tr>
+      <tr><td style="padding:6px 10px;color:var(--text-sub);">種類</td><td style="padding:6px 10px;">${_esc(b.type)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">分類</td><td style="padding:6px 10px;">${_esc(b.category)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">ブランド</td><td style="padding:6px 10px;">${_esc(b.brand)||'—'}</td></tr>
       <tr><td style="padding:6px 10px;color:var(--text-sub);">バージョン</td><td style="padding:6px 10px;">${_esc(b.version)||'—'}</td></tr>
@@ -573,7 +595,7 @@ function openBoardEditModal(id){
   const b = id ? DATA.boards[id] : null;
   document.getElementById('board-edit-title').textContent = b ? '📝 基板を編集' : '📝 基板を登録';
   const sv = (fid,v)=>{ document.getElementById(fid).value = v||''; };
-  sv('board-id', b?b.id:''); sv('board-name', b?b.name:''); sv('board-category', b?b.category:'');
+  sv('board-id', b?b.id:''); sv('board-name', b?b.name:''); sv('board-type', b?b.type:''); sv('board-category', b?b.category:'');
   sv('board-brand', b?b.brand:''); sv('board-version', b?b.version:'');
   document.getElementById('board-game-type').value = b?(b.gameType||''):'';
   document.getElementById('board-status').value = b?(b.status||'設計中'):'設計中';
@@ -594,7 +616,7 @@ function saveBoard(){
   const origId = document.getElementById('board-edit-modal').dataset.origId;
   if (origId && origId !== id) delete DATA.boards[origId];
   DATA.boards[id] = {
-    id, name:v('board-name'), category:v('board-category'), brand:v('board-brand'), version:v('board-version'),
+    id, name:v('board-name'), type:v('board-type'), category:v('board-category'), brand:v('board-brand'), version:v('board-version'),
     gameType: document.getElementById('board-game-type').value,
     specs: JSON.stringify(_editingSpecs.filter(s=>s.label||s.value)),
     revisions: JSON.stringify(_editingRevisions.filter(r=>r.version||r.date||r.changes)),

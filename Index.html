@@ -97,8 +97,16 @@
       <div id="board-import-status" style="font-size:11px;color:var(--text-sub);margin:-10px 0 14px;"></div>
       <div class="filter-bar">
         <div class="search-box"><input type="text" id="board-search" placeholder="基板名・基板ID・分類で検索..." oninput="renderBoardGrid()"></div>
+        <select id="board-filter-type" onchange="renderBoardGrid()"><option value="">すべての種類</option></select>
         <select id="board-filter-category" onchange="renderBoardGrid()"><option value="">すべての分類</option></select>
         <select id="board-filter-status" onchange="renderBoardGrid()"><option value="">すべてのステータス</option></select>
+        <select id="board-filter-gametype" onchange="renderBoardGrid()"><option value="">パチンコ／回胴</option><option value="パチンコ">パチンコ</option><option value="回胴">回胴（スロット）</option><option value="共通">共通</option></select>
+        <select id="board-sort" onchange="renderBoardGrid()">
+          <option value="id">基板IDで並び替え</option>
+          <option value="type">種類で並び替え</option>
+          <option value="gameType">対応区分で並び替え</option>
+          <option value="category">分類で並び替え</option>
+        </select>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('board-search').value='';renderBoardGrid()">クリア</button>
       </div>
       <div id="board-grid" class="zukan-grid"></div>
@@ -328,20 +336,22 @@
         <div class="form-field"><label>基板名</label><input type="text" id="board-name"></div>
       </div>
       <div class="form-row">
+        <div class="form-field"><label>種類</label><input type="text" id="board-type" list="board-type-list" placeholder="例: 主制御基板／液晶制御基板／演出基板 など"></div>
         <div class="form-field"><label>分類</label><input type="text" id="board-category" list="board-category-list" placeholder="例: 仕掛／回路設計／製品 など"></div>
-        <div class="form-field"><label>ブランド</label><input type="text" id="board-brand" placeholder="例: FF+／FJ+ など"></div>
       </div>
       <div class="form-row">
+        <div class="form-field"><label>ブランド</label><input type="text" id="board-brand" placeholder="例: FF+／FJ+ など"></div>
         <div class="form-field"><label>バージョン</label><input type="text" id="board-version"></div>
-        <div class="form-field"><label>対応区分</label>
-          <select id="board-game-type">
-            <option value="">未設定</option>
-            <option value="パチンコ">パチンコ</option>
-            <option value="回胴">回胴（スロット）</option>
-            <option value="共通">パチンコ／回胴共通</option>
-          </select>
-        </div>
       </div>
+      <div class="form-field"><label>対応区分</label>
+        <select id="board-game-type">
+          <option value="">未設定</option>
+          <option value="パチンコ">パチンコ</option>
+          <option value="回胴">回胴（スロット）</option>
+          <option value="共通">パチンコ／回胴共通</option>
+        </select>
+      </div>
+      <datalist id="board-type-list"></datalist>
       <datalist id="board-category-list"></datalist>
       <div class="form-field"><label>ステータス</label>
         <select id="board-status">

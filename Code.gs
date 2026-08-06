@@ -92,7 +92,7 @@ function _write(name, headers, rows) {
 // ── ヘッダー定義 ──
 var H = {
   MODELS:  ['機種コード','機種名','種類','ブランド','遊技機タイプ','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','R基板','関連資料','売上台数','売上目標','リユース・エコ投入台数','在庫数','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
-  BOARDS:  ['基板ID','基板名','分類','ブランド','対応区分','バージョン','ステータス','仕様','改定履歴','関連資料','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
+  BOARDS:  ['基板ID','基板名','種類','分類','ブランド','対応区分','バージョン','ステータス','仕様','改定履歴','関連資料','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
   MANUALS: ['マニュアルID','タイトル','カテゴリ','対象システム','ファイルURL','概要','タグ','更新者','更新日時'],
   FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時']
   // 「ステップ内容」列には構造化ステップ配列のJSON文字列を保存する（[{no,type,title,detail,owner,branchYes,branchNo,nextNo,manualIds,refLink,done,note}, ...]）
@@ -142,6 +142,7 @@ function apiLoadAll() {
       if (r['基板ID']) boards[r['基板ID']] = {
         id: String(r['基板ID']),
         name: String(r['基板名'] || ''),
+        type: String(r['種類'] || '') || _extractSpecValue(String(r['仕様'] || ''), '基板種別'),
         category: String(r['分類'] || ''),
         brand: String(r['ブランド'] || ''),
         gameType: String(r['対応区分'] || ''),
@@ -218,7 +219,7 @@ function apiSaveBoards(boardsObj) {
   return _wrap(function() {
     var rows = Object.values(boardsObj).map(function(b) {
       return {
-        '基板ID': b.id, '基板名': b.name || '', '分類': b.category || '', 'ブランド': b.brand || '',
+        '基板ID': b.id, '基板名': b.name || '', '種類': b.type || '', '分類': b.category || '', 'ブランド': b.brand || '',
         '対応区分': b.gameType || '', 'バージョン': b.version || '',
         'ステータス': b.status || '', '仕様': b.specs || '', '改定履歴': b.revisions || '',
         '関連資料': b.relatedDocs || '', '写真URL': b.photoUrl || '', '機能概要': b.summary || '',
@@ -280,7 +281,13 @@ function apiUploadFile(p) {
     var mimeType = p.mimeType || 'application/octet-stream';
     var blob = Utilities.newBlob(Utilities.base64Decode(p.base64Data), mimeType, p.fileName);
     var file = _uploadFolder().createFile(blob);
-    return { url: file.getUrl(), fileId: file.getId(), fileName: p.fileName };
+    _shareViewable(file); // 画像を<img>で直接表示するには閲覧権限が必要
+    return {
+      url: file.getUrl(),
+      directUrl: 'https://drive.google.com/uc?export=view&id=' + file.getId(), // <img src>で直接表示できる形式
+      fileId: file.getId(),
+      fileName: p.fileName
+    };
   });
 }
 
@@ -628,12 +635,23 @@ function _rowToModel(r) {
     studyNote:String(r['学習メモ']||''), manualIds:String(r['関連マニュアルID']||''), note:String(r['備考']||''), updatedAt:String(r['更新日時']||'') };
 }
 function _rowToBoard(r) {
-  return { id:String(r['基板ID']||''), name:String(r['基板名']||''), category:String(r['分類']||''), brand:String(r['ブランド']||''),
+  return { id:String(r['基板ID']||''), name:String(r['基板名']||''),
+    type:String(r['種類']||'') || _extractSpecValue(String(r['仕様']||''), '基板種別'),
+    category:String(r['分類']||''), brand:String(r['ブランド']||''),
     gameType:String(r['対応区分']||''), version:String(r['バージョン']||''), status:String(r['ステータス']||''),
     specs:String(r['仕様']||''), revisions:String(r['改定履歴']||''), relatedDocs:String(r['関連資料']||''),
     photoUrl:String(r['写真URL']||''), summary:String(r['機能概要']||''),
     mainParts:String(r['主要部品']||''), studyPoint:String(r['学習ポイント']||''), relatedModels:String(r['関連機種コード']||''),
     note:String(r['備考']||''), updatedAt:String(r['更新日時']||'') };
+}
+// 「仕様」JSON配列から指定labelの値を取り出す（旧データの「基板種別」を「種類」列へフォールバック取得するため）
+function _extractSpecValue(specsJson, label) {
+  try {
+    var arr = JSON.parse(specsJson || '[]');
+    if (!Array.isArray(arr)) return '';
+    var found = arr.filter(function(s){ return s && s.label === label; })[0];
+    return found ? String(found.value || '') : '';
+  } catch(e) { return ''; }
 }
 function _parseJsonArraySafe(str) {
   try { var a = JSON.parse(str||'[]'); return Array.isArray(a) ? a : []; } catch(e) { return []; }
