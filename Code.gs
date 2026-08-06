@@ -49,8 +49,14 @@ function include(filename) {
 // プロパティ名は旧システム（BOM Pro）から継続利用（既存デプロイ環境の設定を活かすため）
 function _ss() {
   var id = getSetting('BOARD_SS_ID');
-  if (!id) throw new Error('スクリプトプロパティ BOARD_SS_ID が未設定です');
-  return SpreadsheetApp.openById(id);
+  if (id) return SpreadsheetApp.openById(id);
+  // 未設定の場合、このスクリプトが紐づくコンテナ（スプレッドシート）を自動検出して記憶する
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) {
+    PropertiesService.getScriptProperties().setProperty('BOARD_SS_ID', active.getId());
+    return active;
+  }
+  throw new Error('スクリプトプロパティ BOARD_SS_ID が未設定です');
 }
 
 function _sheet(name, headers) {
