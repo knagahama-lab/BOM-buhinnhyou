@@ -47,16 +47,17 @@ function include(filename) {
 
 // ── スプレッドシート取得 ──
 // プロパティ名は旧システム（BOM Pro）から継続利用（既存デプロイ環境の設定を活かすため）
+// DEFAULT_SS_ID: このプロジェクト作成時に自動生成したDBスプレッドシートのID。
+// BOARD_SS_ID未設定時のフォールバック（Webアプリ経由の呼び出しではgetActiveSpreadsheet()が
+// nullを返すため、コンテナの自動検出には頼れない。代わりに既知のIDを直接使う）。
+var DEFAULT_SS_ID = '16YQ9jGyivJUcpv7otiQ8M9PAUUVziIEgSZ5a-C2ugsk';
 function _ss() {
   var id = getSetting('BOARD_SS_ID');
-  if (id) return SpreadsheetApp.openById(id);
-  // 未設定の場合、このスクリプトが紐づくコンテナ（スプレッドシート）を自動検出して記憶する
-  var active = SpreadsheetApp.getActiveSpreadsheet();
-  if (active) {
-    PropertiesService.getScriptProperties().setProperty('BOARD_SS_ID', active.getId());
-    return active;
+  if (!id) {
+    id = DEFAULT_SS_ID;
+    try { PropertiesService.getScriptProperties().setProperty('BOARD_SS_ID', id); } catch(e) {}
   }
-  throw new Error('スクリプトプロパティ BOARD_SS_ID が未設定です');
+  return SpreadsheetApp.openById(id);
 }
 
 function _sheet(name, headers) {
