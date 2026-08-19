@@ -10,7 +10,8 @@ var S = {
   MODELS:  '機種図鑑',
   BOARDS:  '基板図鑑',
   MANUALS: 'マニュアル',
-  FLOWS:   'フロー'
+  FLOWS:   'フロー',
+  ANALYSIS: '経営分析'
 };
 
 // ── プロパティ ──
@@ -101,11 +102,13 @@ var H = {
   MODELS:  ['機種コード','機種名','種類','ブランド','遊技機タイプ','発売日','M基板','D基板','DE基板','E基板','C基板','S基板','R基板','関連資料','売上台数','売上目標','リユース・エコ投入台数','在庫数','写真URL','概要','特徴・ポイント','学習メモ','関連マニュアルID','備考','更新日時'],
   BOARDS:  ['基板ID','基板名','種類','分類','ブランド','対応区分','バージョン','ステータス','仕様','改定履歴','関連資料','写真URL','機能概要','主要部品','学習ポイント','関連機種コード','備考','更新日時'],
   MANUALS: ['マニュアルID','タイトル','カテゴリ','対象システム','ファイルURL','概要','タグ','更新者','更新日時'],
-  FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時']
+  FLOWS:   ['フローID','タイトル','カテゴリ','概要','ステップ内容','図解URL','関連マニュアルID','備考','更新日時'],
+  ANALYSIS: ['機種コード','3C_自社','3C_顧客','3C_競合','SWOT_強み','SWOT_弱み','SWOT_機会','SWOT_脅威','PEST_政治','PEST_経済','PEST_社会','PEST_技術','更新日時']
   // 「ステップ内容」列には構造化ステップ配列のJSON文字列を保存する（[{no,type,title,detail,owner,branchYes,branchNo,nextNo,manualIds,refLink,done,note}, ...]）
   // 基板図鑑の「仕様」列には[{label,value}, ...]、「改定履歴」列には[{version,date,changes}, ...]のJSON文字列を保存する
   // 機種図鑑の「関連資料」列には[{category,title,url,note}, ...]のJSON文字列を保存する（構成表/見積書/組立基準書/生産計画書/納品計画書/部品表など）
   // JSONとして読めない場合はフロント側で1件の自由テキストとしてフォールバック表示する
+  // 経営分析シートは機種コード単位で1行。3C/SWOT/PEST分析（CX研修フレーム）を機種ごとに記録する
 };
 
 // ══════════════════════════════════════════════════
@@ -113,7 +116,7 @@ var H = {
 // ══════════════════════════════════════════════════
 function apiLoadAll() {
   return _wrap(function() {
-    var models = {}, boards = {}, manuals = {}, flows = {};
+    var models = {}, boards = {}, manuals = {}, flows = {}, analysis = {};
 
     _read(S.MODELS, H.MODELS).forEach(function(r) {
       if (r['機種コード']) models[r['機種コード']] = {
@@ -196,7 +199,44 @@ function apiLoadAll() {
       };
     });
 
-    return { models: models, boards: boards, manuals: manuals, flows: flows };
+    _read(S.ANALYSIS, H.ANALYSIS).forEach(function(r) {
+      if (r['機種コード']) analysis[r['機種コード']] = {
+        code: String(r['機種コード']),
+        c3Self: String(r['3C_自社'] || ''),
+        c3Customer: String(r['3C_顧客'] || ''),
+        c3Competitor: String(r['3C_競合'] || ''),
+        swotStrength: String(r['SWOT_強み'] || ''),
+        swotWeakness: String(r['SWOT_弱み'] || ''),
+        swotOpportunity: String(r['SWOT_機会'] || ''),
+        swotThreat: String(r['SWOT_脅威'] || ''),
+        pestPolitics: String(r['PEST_政治'] || ''),
+        pestEconomy: String(r['PEST_経済'] || ''),
+        pestSociety: String(r['PEST_社会'] || ''),
+        pestTech: String(r['PEST_技術'] || ''),
+        updatedAt: String(r['更新日時'] || '')
+      };
+    });
+
+    return { models: models, boards: boards, manuals: manuals, flows: flows, analysis: analysis };
+  });
+}
+
+// ── 経営分析（3C/SWOT/PEST） 保存 ──
+function apiSaveAnalysis(analysisObj) {
+  return _wrap(function() {
+    var rows = Object.values(analysisObj).map(function(a) {
+      return {
+        '機種コード': a.code,
+        '3C_自社': a.c3Self || '', '3C_顧客': a.c3Customer || '', '3C_競合': a.c3Competitor || '',
+        'SWOT_強み': a.swotStrength || '', 'SWOT_弱み': a.swotWeakness || '',
+        'SWOT_機会': a.swotOpportunity || '', 'SWOT_脅威': a.swotThreat || '',
+        'PEST_政治': a.pestPolitics || '', 'PEST_経済': a.pestEconomy || '',
+        'PEST_社会': a.pestSociety || '', 'PEST_技術': a.pestTech || '',
+        '更新日時': a.updatedAt || ''
+      };
+    });
+    _write(S.ANALYSIS, H.ANALYSIS, rows);
+    return { saved: rows.length };
   });
 }
 

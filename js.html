@@ -9,18 +9,20 @@ const MENU = [
   { id:'board',    icon:'🔌', label:'基板図鑑',     section:'製品図鑑' },
   { id:'manual',   icon:'📚', label:'マニュアル管理', section:'ナレッジ' },
   { id:'flow',     icon:'🔄', label:'フロー管理',   section:'ナレッジ' },
+  { id:'analysis', icon:'📊', label:'分析',        section:'分析' },
   { id:'settings', icon:'⚙️', label:'設定・使い方', section:'その他' }
 ];
-const PAGE_TITLES = { model:'機種図鑑', board:'基板図鑑', manual:'マニュアル管理', flow:'フロー管理', settings:'設定・使い方' };
+const PAGE_TITLES = { model:'機種図鑑', board:'基板図鑑', manual:'マニュアル管理', flow:'フロー管理', analysis:'分析', settings:'設定・使い方' };
 const TOPBAR_ACTIONS = {
   model:    '<button class="topbar-btn primary" onclick="openModelEditModal(null)">＋ 機種を登録</button>',
   board:    '<button class="topbar-btn primary" onclick="openBoardEditModal(null)">＋ 基板を登録</button>',
   manual:   '<button class="topbar-btn primary" onclick="openManualEditModal(null)">＋ マニュアルを登録</button>',
   flow:     '<button class="topbar-btn primary" onclick="openFlowEditModal(null)">＋ フローを登録</button>',
+  analysis: '',
   settings: ''
 };
 
-let DATA = { models:{}, boards:{}, manuals:{}, flows:{} };
+let DATA = { models:{}, boards:{}, manuals:{}, flows:{}, analysis:{} };
 let _currentPage = 'model';
 
 window.addEventListener('load', () => {
@@ -113,7 +115,8 @@ function loadAll(){
     DATA.boards = res.boards || {};
     DATA.manuals = res.manuals || {};
     DATA.flows = res.flows || {};
-    renderModelGrid(); renderBoardGrid(); renderManualList(); renderFlowList();
+    DATA.analysis = res.analysis || {};
+    renderModelGrid(); renderBoardGrid(); renderManualList(); renderFlowList(); renderAnalysisPage();
   }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
     .apiLoadAll();
 }
@@ -706,6 +709,116 @@ function deleteManual(id){
     else showToast('削除失敗: ' + (res.error||''), true);
   }).withFailureHandler(err => showToast('通信エラー: ' + (err.message||err), true))
     .apiSaveManuals(DATA.manuals);
+}
+
+// ════════════════════════════════════════════════════════════
+// 分析（達成率分析／3C・SWOT・PEST分析）
+// ════════════════════════════════════════════════════════════
+function renderAnalysisPage(){
+  renderAchievementTable();
+  _populateAnalysisModelSelect();
+  loadAnalysisForModel();
+}
+
+// ── 達成率分析（機種図鑑の売上台数／売上目標から算出。専用データは持たない） ──
+function renderAchievementTable(){
+  const el = document.getElementById('achievement-table'); if(!el) return;
+  const sortSel = document.getElementById('analysis-sort');
+  const sortMode = sortSel ? sortSel.value : 'rateAsc';
+
+  let list = Object.values(DATA.models).map(m => {
+    const units = parseFloat(m.salesUnits) || 0;
+    const target = parseFloat(m.salesTarget) || 0;
+    const rate = target > 0 ? units / target : null;
+    return { code:m.code, name:m.name, brand:m.brand, units, target, rate };
+  });
+
+  if (list.length === 0) {
+    el.innerHTML = '<div style="padding:20px;color:var(--text-sub);font-size:12.5px;">機種データがありません。「機種図鑑」から売上台数・売上目標を登録してください。</div>';
+    return;
+  }
+
+  list.sort((a,b) => {
+    if (sortMode === 'salesDesc') return b.units - a.units;
+    if (sortMode === 'rateDesc') return (b.rate==null?-1:b.rate) - (a.rate==null?-1:a.rate);
+    const ar = a.rate==null ? Infinity : a.rate, br = b.rate==null ? Infinity : b.rate; // rateAsc: 目標未設定は末尾
+    return ar - br;
+  });
+
+  el.innerHTML = `<table class="analysis-table"><thead><tr>
+      <th>機種コード</th><th>機種名</th><th>ブランド</th><th>売上台数</th><th>売上目標</th><th>達成率</th>
+    </tr></thead><tbody>${list.map(x => {
+      const pct = x.rate == null ? null : Math.round(x.rate * 1000) / 10;
+      const barColor = pct == null ? '#cbd5e1' : (pct >= 100 ? 'var(--success)' : pct >= 70 ? 'var(--warning)' : 'var(--danger)');
+      const barWidth = pct == null ? 0 : Math.min(pct, 150) / 150 * 100;
+      return `<tr>
+        <td>${_esc(x.code)}</td><td>${_esc(x.name)}</td><td>${_esc(x.brand)}</td>
+        <td>${x.units || '-'}</td><td>${x.target || '-'}</td>
+        <td><div style="display:flex;align-items:center;gap:8px;">
+          <div class="rate-bar-wrap"><div class="rate-bar" style="width:${barWidth}%;background:${barColor};"></div></div>
+          <span style="font-size:11.5px;font-weight:700;min-width:76px;color:${pct==null?'var(--text-muted)':barColor};">${pct==null?'目標未設定':pct+'%'}</span>
+        </div></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+// ── 3C・SWOT・PEST分析（機種単位。CX研修day1「顧客深掘力」フレームを製品分析に適用） ──
+function _populateAnalysisModelSelect(){
+  const sel = document.getElementById('analysis-model-select'); if(!sel) return;
+  const cur = sel.value;
+  const list = Object.values(DATA.models).sort((a,b) => String(a.code).localeCompare(String(b.code)));
+  sel.innerHTML = '<option value="">機種を選択...</option>' + list.map(m =>
+    `<option value="${_esc(m.code)}">${_esc(m.code)}${m.name ? '｜' + _esc(m.name) : ''}</option>`).join('');
+  if (cur && DATA.models[cur]) sel.value = cur;
+}
+function loadAnalysisForModel(){
+  const sel = document.getElementById('analysis-model-select'); if(!sel) return;
+  const code = sel.value;
+  const editor = document.getElementById('analysis-editor');
+  const empty = document.getElementById('analysis-editor-empty');
+  if (!code) { editor.style.display = 'none'; if (empty) empty.style.display = 'block'; return; }
+  editor.style.display = 'block'; if (empty) empty.style.display = 'none';
+
+  const a = DATA.analysis[code] || {};
+  document.getElementById('an-3c-self').value = a.c3Self || '';
+  document.getElementById('an-3c-customer').value = a.c3Customer || '';
+  document.getElementById('an-3c-competitor').value = a.c3Competitor || '';
+  document.getElementById('an-swot-strength').value = a.swotStrength || '';
+  document.getElementById('an-swot-weakness').value = a.swotWeakness || '';
+  document.getElementById('an-swot-opportunity').value = a.swotOpportunity || '';
+  document.getElementById('an-swot-threat').value = a.swotThreat || '';
+  document.getElementById('an-pest-politics').value = a.pestPolitics || '';
+  document.getElementById('an-pest-economy').value = a.pestEconomy || '';
+  document.getElementById('an-pest-society').value = a.pestSociety || '';
+  document.getElementById('an-pest-tech').value = a.pestTech || '';
+  document.getElementById('analysis-save-status').textContent = a.updatedAt ? ('最終更新: ' + a.updatedAt) : '未入力';
+}
+function saveAnalysis(){
+  const code = document.getElementById('analysis-model-select').value;
+  if (!code) { showToast('対象の機種を選択してください', true); return; }
+  const statusEl = document.getElementById('analysis-save-status');
+  const entry = {
+    code,
+    c3Self: document.getElementById('an-3c-self').value,
+    c3Customer: document.getElementById('an-3c-customer').value,
+    c3Competitor: document.getElementById('an-3c-competitor').value,
+    swotStrength: document.getElementById('an-swot-strength').value,
+    swotWeakness: document.getElementById('an-swot-weakness').value,
+    swotOpportunity: document.getElementById('an-swot-opportunity').value,
+    swotThreat: document.getElementById('an-swot-threat').value,
+    pestPolitics: document.getElementById('an-pest-politics').value,
+    pestEconomy: document.getElementById('an-pest-economy').value,
+    pestSociety: document.getElementById('an-pest-society').value,
+    pestTech: document.getElementById('an-pest-tech').value,
+    updatedAt: _now()
+  };
+  DATA.analysis[code] = entry;
+  statusEl.textContent = '⏳ 保存中...';
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success) { statusEl.textContent = '最終更新: ' + entry.updatedAt; showToast('分析結果を保存しました'); }
+    else { showToast('保存に失敗しました: ' + ((res&&res.error)||''), true); }
+  }).withFailureHandler(err => { showToast('通信エラー: ' + (err.message||err), true); })
+    .apiSaveAnalysis(DATA.analysis);
 }
 
 // ════════════════════════════════════════════════════════════

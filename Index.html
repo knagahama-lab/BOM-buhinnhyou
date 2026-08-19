@@ -193,6 +193,63 @@
       </div>
     </div>
 
+    <!-- ══════════ 分析 ══════════ -->
+    <div id="page-analysis" class="page">
+      <div class="page-heading">
+        <div><h2>📊 分析</h2><p>機種ごとの売上達成率と、3C・SWOT・PEST分析で市場環境を整理できます。</p></div>
+      </div>
+
+      <div class="table-wrap" style="padding:20px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <h3 style="font-size:14px;">売上実績×目標 達成率分析</h3>
+          <select id="analysis-sort" onchange="renderAchievementTable()" style="width:auto;">
+            <option value="rateAsc">達成率が低い順（要注意から）</option>
+            <option value="rateDesc">達成率が高い順</option>
+            <option value="salesDesc">売上台数が多い順</option>
+          </select>
+        </div>
+        <div id="achievement-table"></div>
+      </div>
+
+      <div class="table-wrap" style="padding:20px;">
+        <h3 style="font-size:14px;margin-bottom:4px;">3C・SWOT・PEST分析（機種別）</h3>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px;">CX研修day1「顧客深掘力」で扱った3C分析・SWOT分析・PEST分析のフレームを、機種（製品）を主語にして整理するための欄です。</p>
+        <div class="form-field" style="max-width:380px;">
+          <label>対象機種</label>
+          <select id="analysis-model-select" onchange="loadAnalysisForModel()"><option value="">機種を選択...</option></select>
+        </div>
+        <div id="analysis-editor-empty" style="font-size:12.5px;color:var(--text-sub);padding:12px 0;">機種を選択すると、3C・SWOT・PEST分析を記入できます。</div>
+        <div id="analysis-editor" style="display:none;">
+          <div class="analysis-grid">
+            <div class="analysis-block">
+              <h4>3C分析</h4>
+              <div class="form-field"><label>自社（当社の技術・製品としての強み）</label><textarea id="an-3c-self" rows="3"></textarea></div>
+              <div class="form-field"><label>顧客（遊技機メーカー・市場ニーズ）</label><textarea id="an-3c-customer" rows="3"></textarea></div>
+              <div class="form-field"><label>競合</label><textarea id="an-3c-competitor" rows="3"></textarea></div>
+            </div>
+            <div class="analysis-block">
+              <h4>SWOT分析</h4>
+              <div class="form-field"><label>強み</label><textarea id="an-swot-strength" rows="2"></textarea></div>
+              <div class="form-field"><label>弱み</label><textarea id="an-swot-weakness" rows="2"></textarea></div>
+              <div class="form-field"><label>機会</label><textarea id="an-swot-opportunity" rows="2"></textarea></div>
+              <div class="form-field"><label>脅威</label><textarea id="an-swot-threat" rows="2"></textarea></div>
+            </div>
+            <div class="analysis-block">
+              <h4>PEST分析</h4>
+              <div class="form-field"><label>政治的要因</label><textarea id="an-pest-politics" rows="2"></textarea></div>
+              <div class="form-field"><label>経済的要因</label><textarea id="an-pest-economy" rows="2"></textarea></div>
+              <div class="form-field"><label>社会文化的要因</label><textarea id="an-pest-society" rows="2"></textarea></div>
+              <div class="form-field"><label>技術的要因</label><textarea id="an-pest-tech" rows="2"></textarea></div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:8px;">
+            <span id="analysis-save-status" style="font-size:11px;color:var(--text-sub);"></span>
+            <button class="btn btn-primary" onclick="saveAnalysis()">💾 保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══════════ 設定 ══════════ -->
     <div id="page-settings" class="page">
       <div class="page-heading"><div><h2>⚙️ 設定・使い方</h2></div></div>
